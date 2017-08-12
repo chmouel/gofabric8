@@ -32,12 +32,13 @@ import (
 	"github.com/fabric8io/gofabric8/client"
 	"github.com/fabric8io/gofabric8/util"
 	oclient "github.com/openshift/origin/pkg/client"
-	tapi "github.com/openshift/origin/pkg/template/api"
-	tapiv1 "github.com/openshift/origin/pkg/template/api/v1"
+	tapi "github.com/openshift/origin/pkg/template/apis/template"
+	tapiv1 "github.com/openshift/origin/pkg/template/apis/template/v1"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 	"k8s.io/kubernetes/pkg/api"
 
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/labels"
@@ -79,7 +80,7 @@ func NewCmdSecrets(f cmdutil.Factory) *cobra.Command {
 					"provider": "fabric8.io",
 					"kind":     "catalog",
 				}
-				configmaps, err := c.ConfigMaps(ns).List(api.ListOptions{
+				configmaps, err := c.ConfigMaps(ns).List(apim.ListOptions{
 					LabelSelector: labels.Set(catalogSelector).AsSelector(),
 				})
 				if err != nil {
@@ -147,7 +148,7 @@ func processSecretsForTemplate(c *clientset.Clientset, i tapi.Template, f cmduti
 }
 
 func getTemplates(c *oclient.Client, ns string) *tapi.TemplateList {
-	templates, err := c.Templates(ns).List(api.ListOptions{})
+	templates, err := c.Templates(ns).List(apim.ListOptions{})
 	if err != nil {
 		util.Fatalf("No Templates found in namespace %s\n", ns)
 	}

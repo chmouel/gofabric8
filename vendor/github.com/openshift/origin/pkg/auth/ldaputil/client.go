@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"net"
 
-	"k8s.io/kubernetes/pkg/util/cert"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
+	"k8s.io/client-go/util/cert"
 
 	"github.com/openshift/origin/pkg/auth/ldaputil/ldapclient"
 	"gopkg.in/ldap.v2"
@@ -66,13 +67,13 @@ func (l *ldapClientConfig) Connect() (ldap.Client, error) {
 	// Ensure tlsConfig specifies the server we're connecting to
 	if tlsConfig != nil && !tlsConfig.InsecureSkipVerify && len(tlsConfig.ServerName) == 0 {
 		// Add to a copy of the tlsConfig to avoid mutating the original
-		c := *tlsConfig
+		c := utilnet.CloneTLSConfig(tlsConfig)
 		if host, _, err := net.SplitHostPort(l.host); err == nil {
 			c.ServerName = host
 		} else {
 			c.ServerName = l.host
 		}
-		tlsConfig = &c
+		tlsConfig = c
 	}
 
 	switch l.scheme {

@@ -8,18 +8,21 @@ import (
 
 	"github.com/spf13/cobra"
 
+	sccutil "github.com/openshift/origin/pkg/security/securitycontextconstraints/util"
+	kapierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	kapi "k8s.io/kubernetes/pkg/api"
-	kapierrors "k8s.io/kubernetes/pkg/api/errors"
 	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	sccutil "k8s.io/kubernetes/pkg/securitycontextconstraints/util"
-	"k8s.io/kubernetes/pkg/util/sets"
 
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
 	"github.com/openshift/origin/pkg/cmd/templates"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
+	securityapi "github.com/openshift/origin/pkg/security/apis/security"
+	"github.com/openshift/origin/pkg/security/legacyclient"
 )
 
 // ReconcileSCCRecommendedName is the recommended command name
@@ -28,8 +31,9 @@ const ReconcileSCCRecommendedName = "reconcile-sccs"
 type ReconcileSCCOptions struct {
 	// confirmed indicates that the data should be persisted
 	Confirmed bool
-	// union controls if we make additive changes to the users/groups fields or overwrite them
-	// as well as preserving existing priorities (unset priorities will always be reconciled)
+	// union controls if we make additive changes to the users/groups/labels/annotations fields
+	// or overwrite them as well as preserving existing priorities (unset priorities will
+	// always be reconciled)
 	Union bool
 	// is the name of the openshift infrastructure namespace.  It is provided here so that
 	// the command doesn't need to try and parse the policy config.
@@ -38,7 +42,7 @@ type ReconcileSCCOptions struct {
 	Out    io.Writer
 	Output string
 
-	SCCClient kcoreclient.SecurityContextConstraintsInterface
+	SCCClient legacyclient.SecurityContextConstraintInterface
 	NSClient  kcoreclient.NamespaceInterface
 }
 
@@ -51,7 +55,7 @@ var (
 		This command will not remove any additional cluster SCCs.  By default, this command
 		will not remove additional users and groups that have been granted access to the SCC and
 		will preserve existing priorities (but will always reconcile unset priorities and the policy
-		definition).
+		definition), labels, and annotations.
 
 		You can see which cluster SCCs have recommended changes by choosing an output type.`)
 
@@ -60,10 +64,10 @@ var (
 	  %[1]s
 
 	  # Update cluster SCCs that don't match the current defaults preserving additional grants
-	  # for users and group and keeping any priorities that are already set
+	  # for users, groups, labels, annotations and keeping any priorities that are already set
 	  %[1]s --confirm
 
-	  # Replace existing users, groups, and priorities that do not match defaults
+	  # Replace existing users, groups, labels, annotations, and priorities that do not match defaults
 	  %[1]s --additive-only=false --confirm`)
 )
 
@@ -116,7 +120,7 @@ func (o *ReconcileSCCOptions) Complete(cmd *cobra.Command, f *clientcmd.Factory,
 	if err != nil {
 		return err
 	}
-	o.SCCClient = kClient.Core().SecurityContextConstraints()
+	o.SCCClient = legacyclient.NewFromClient(kClient.Core().RESTClient())
 	o.NSClient = kClient.Core().Namespaces()
 	o.Output = kcmdutil.GetFlagString(cmd, "output")
 
@@ -127,8 +131,8 @@ func (o *ReconcileSCCOptions) Validate() error {
 	if o.SCCClient == nil {
 		return errors.New("a SCC client is required")
 	}
-	if _, err := o.NSClient.Get(o.InfraNamespace); err != nil {
-		return fmt.Errorf("%s is not a valid namespace", o.InfraNamespace)
+	if _, err := o.NSClient.Get(o.InfraNamespace, metav1.GetOptions{}); err != nil {
+		return fmt.Errorf("Failed to GET reconcile SCC namespace %s: %v", o.InfraNamespace, err)
 	}
 	return nil
 }
@@ -166,15 +170,15 @@ func (o *ReconcileSCCOptions) RunReconcileSCCs(cmd *cobra.Command, f *clientcmd.
 
 // ChangedSCCs returns the SCCs that must be created and/or updated to match the
 // recommended bootstrap SCCs.
-func (o *ReconcileSCCOptions) ChangedSCCs() ([]*kapi.SecurityContextConstraints, error) {
-	changedSCCs := []*kapi.SecurityContextConstraints{}
+func (o *ReconcileSCCOptions) ChangedSCCs() ([]*securityapi.SecurityContextConstraints, error) {
+	changedSCCs := []*securityapi.SecurityContextConstraints{}
 
 	groups, users := bootstrappolicy.GetBoostrapSCCAccess(o.InfraNamespace)
 	bootstrapSCCs := bootstrappolicy.GetBootstrapSecurityContextConstraints(groups, users)
 
 	for i := range bootstrapSCCs {
 		expectedSCC := &bootstrapSCCs[i]
-		actualSCC, err := o.SCCClient.Get(expectedSCC.Name)
+		actualSCC, err := o.SCCClient.Get(expectedSCC.Name, metav1.GetOptions{})
 		// if not found it needs to be created
 		if kapierrors.IsNotFound(err) {
 			changedSCCs = append(changedSCCs, expectedSCC)
@@ -193,9 +197,9 @@ func (o *ReconcileSCCOptions) ChangedSCCs() ([]*kapi.SecurityContextConstraints,
 }
 
 // ReplaceChangedSCCs persists the changed SCCs.
-func (o *ReconcileSCCOptions) ReplaceChangedSCCs(changedSCCs []*kapi.SecurityContextConstraints) error {
+func (o *ReconcileSCCOptions) ReplaceChangedSCCs(changedSCCs []*securityapi.SecurityContextConstraints) error {
 	for i := range changedSCCs {
-		_, err := o.SCCClient.Get(changedSCCs[i].Name)
+		_, err := o.SCCClient.Get(changedSCCs[i].Name, metav1.GetOptions{})
 		if err != nil && !kapierrors.IsNotFound(err) {
 			return err
 		}
@@ -222,7 +226,7 @@ func (o *ReconcileSCCOptions) ReplaceChangedSCCs(changedSCCs []*kapi.SecurityCon
 // it does this by making the expected SCC mirror the actual SCC for items that
 // we are not reconciling and performing a diff (ignoring changes to metadata).
 // If a diff is produced then the expected SCC is submitted as needing an update.
-func (o *ReconcileSCCOptions) computeUpdatedSCC(expected kapi.SecurityContextConstraints, actual kapi.SecurityContextConstraints) (*kapi.SecurityContextConstraints, bool) {
+func (o *ReconcileSCCOptions) computeUpdatedSCC(expected securityapi.SecurityContextConstraints, actual securityapi.SecurityContextConstraints) (*securityapi.SecurityContextConstraints, bool) {
 	needsUpdate := false
 
 	// if unioning old and new groups/users then make the expected contain all
@@ -272,7 +276,7 @@ func (o *ReconcileSCCOptions) computeUpdatedSCC(expected kapi.SecurityContextCon
 }
 
 // sortVolumes sorts the volume slice of the SCC in place.
-func sortVolumes(scc *kapi.SecurityContextConstraints) {
+func sortVolumes(scc *securityapi.SecurityContextConstraints) {
 	if scc.Volumes == nil || len(scc.Volumes) == 0 {
 		return
 	}
@@ -282,10 +286,10 @@ func sortVolumes(scc *kapi.SecurityContextConstraints) {
 }
 
 // sliceToFSType converts a string slice into FStypes.
-func sliceToFSType(s []string) []kapi.FSType {
-	fsTypes := []kapi.FSType{}
+func sliceToFSType(s []string) []securityapi.FSType {
+	fsTypes := []securityapi.FSType{}
 	for _, v := range s {
-		fsTypes = append(fsTypes, kapi.FSType(v))
+		fsTypes = append(fsTypes, securityapi.FSType(v))
 	}
 	return fsTypes
 }

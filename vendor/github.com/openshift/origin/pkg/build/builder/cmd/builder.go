@@ -11,31 +11,31 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/golang/glog"
 
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	restclient "k8s.io/client-go/rest"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/client/restclient"
-	"k8s.io/kubernetes/pkg/runtime"
 
 	s2iapi "github.com/openshift/source-to-image/pkg/api"
 
-	"github.com/openshift/origin/pkg/build/api"
-	"github.com/openshift/origin/pkg/build/api/validation"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	"github.com/openshift/origin/pkg/build/apis/build/validation"
 	bld "github.com/openshift/origin/pkg/build/builder"
 	"github.com/openshift/origin/pkg/build/builder/cmd/scmauth"
+	"github.com/openshift/origin/pkg/build/util"
 	"github.com/openshift/origin/pkg/client"
-	dockerutil "github.com/openshift/origin/pkg/cmd/util/docker"
 	"github.com/openshift/origin/pkg/generate/git"
 	"github.com/openshift/origin/pkg/version"
 )
 
 type builder interface {
-	Build(dockerClient bld.DockerClient, sock string, buildsClient client.BuildInterface, build *api.Build, gitClient bld.GitClient, cgLimits *s2iapi.CGroupLimits) error
+	Build(dockerClient bld.DockerClient, sock string, buildsClient client.BuildInterface, build *buildapi.Build, gitClient bld.GitClient, cgLimits *s2iapi.CGroupLimits) error
 }
 
 type builderConfig struct {
 	out             io.Writer
-	build           *api.Build
+	build           *buildapi.Build
 	sourceSecretDir string
 	dockerClient    *docker.Client
 	dockerEndpoint  string
@@ -48,19 +48,34 @@ func newBuilderConfigFromEnvironment(out io.Writer) (*builderConfig, error) {
 
 	cfg.out = out
 
-	// build (BUILD)
 	buildStr := os.Getenv("BUILD")
-	glog.V(4).Infof("$BUILD env var is %s \n", buildStr)
-	cfg.build = &api.Build{}
-	if err := runtime.DecodeInto(kapi.Codecs.UniversalDecoder(), []byte(buildStr), cfg.build); err != nil {
-		return nil, fmt.Errorf("unable to parse build: %v", err)
+	cfg.build = &buildapi.Build{}
+
+	obj, groupVersionKind, err := kapi.Codecs.UniversalDecoder().Decode([]byte(buildStr), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse build string: %v", err)
+	}
+	ok := false
+	cfg.build, ok = obj.(*buildapi.Build)
+	if !ok {
+		return nil, fmt.Errorf("build string is not a build: %v", err)
+	}
+	if glog.V(4) {
+		redactedBuild := util.SafeForLoggingBuild(cfg.build)
+		if err != nil {
+			return nil, fmt.Errorf("unable to strip proxy credentials from build: %v", err)
+		}
+		bytes, err := runtime.Encode(kapi.Codecs.LegacyCodec(groupVersionKind.GroupVersion()), redactedBuild)
+		if err != nil {
+			return nil, fmt.Errorf("unable to serialize build: %v", err)
+		}
+		glog.V(4).Infof("redacted build: %v", string(bytes))
 	}
 	if errs := validation.ValidateBuild(cfg.build); len(errs) > 0 {
-		return nil, errors.NewInvalid(unversioned.GroupKind{Kind: "Build"}, cfg.build.Name, errs)
+		return nil, errors.NewInvalid(schema.GroupKind{Kind: "Build"}, cfg.build.Name, errs)
 	}
-	glog.V(4).Infof("Build: %#v", cfg.build)
 
-	masterVersion := os.Getenv(api.OriginVersion)
+	masterVersion := os.Getenv(buildapi.OriginVersion)
 	thisVersion := version.Get().String()
 	if len(masterVersion) != 0 && masterVersion != thisVersion {
 		glog.V(3).Infof("warning: OpenShift server version %q differs from this image %q\n", masterVersion, thisVersion)
@@ -73,7 +88,7 @@ func newBuilderConfigFromEnvironment(out io.Writer) (*builderConfig, error) {
 
 	// dockerClient and dockerEndpoint (DOCKER_HOST)
 	// usually not set, defaults to docker socket
-	cfg.dockerClient, cfg.dockerEndpoint, err = dockerutil.NewHelper().GetClient()
+	cfg.dockerClient, cfg.dockerEndpoint, err = bld.GetDockerClient()
 	if err != nil {
 		return nil, fmt.Errorf("no Docker configuration defined: %v", err)
 	}
@@ -124,7 +139,6 @@ func (c *builderConfig) setupGitEnvironment() (string, []string, error) {
 			return sourceSecretDir, nil, fmt.Errorf("cannot setup source secret: %v", err)
 		}
 		if overrideURL != nil {
-			c.build.Annotations[bld.OriginalSourceURLAnnotationKey] = gitSource.URI
 			gitSource.URI = overrideURL.String()
 		}
 		gitEnv = append(gitEnv, secretsEnv...)
@@ -199,14 +213,14 @@ func fixSecretPermissions(secretsDir string) (string, error) {
 type dockerBuilder struct{}
 
 // Build starts a Docker build.
-func (dockerBuilder) Build(dockerClient bld.DockerClient, sock string, buildsClient client.BuildInterface, build *api.Build, gitClient bld.GitClient, cgLimits *s2iapi.CGroupLimits) error {
+func (dockerBuilder) Build(dockerClient bld.DockerClient, sock string, buildsClient client.BuildInterface, build *buildapi.Build, gitClient bld.GitClient, cgLimits *s2iapi.CGroupLimits) error {
 	return bld.NewDockerBuilder(dockerClient, buildsClient, build, gitClient, cgLimits).Build()
 }
 
 type s2iBuilder struct{}
 
 // Build starts an S2I build.
-func (s2iBuilder) Build(dockerClient bld.DockerClient, sock string, buildsClient client.BuildInterface, build *api.Build, gitClient bld.GitClient, cgLimits *s2iapi.CGroupLimits) error {
+func (s2iBuilder) Build(dockerClient bld.DockerClient, sock string, buildsClient client.BuildInterface, build *buildapi.Build, gitClient bld.GitClient, cgLimits *s2iapi.CGroupLimits) error {
 	return bld.NewS2IBuilder(dockerClient, sock, buildsClient, build, gitClient, cgLimits).Build()
 }
 

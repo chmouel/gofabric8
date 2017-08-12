@@ -12,23 +12,24 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/util/intstr"
 
-	authapi "github.com/openshift/origin/pkg/authorization/api"
+	authapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	"github.com/openshift/origin/pkg/cmd/templates"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
 	"github.com/openshift/origin/pkg/cmd/util/variable"
 
 	configcmd "github.com/openshift/origin/pkg/config/cmd"
-	deployapi "github.com/openshift/origin/pkg/deploy/api"
+	deployapi "github.com/openshift/origin/pkg/deploy/apis/apps"
 	"github.com/openshift/origin/pkg/generate/app"
 )
 
@@ -108,6 +109,11 @@ type RegistryConfig struct {
 	DaemonSet      bool
 	EnforceQuota   bool
 
+	// SupplementalGroups is list of int64, however cobra does not have appropriate func
+	// for that type list.
+	SupplementalGroups []string
+	FSGroup            string
+
 	ServingCertPath string
 	ServingKeyPath  string
 
@@ -181,6 +187,8 @@ func NewCmdRegistry(f *clientcmd.Factory, parentName, name string, out, errout i
 	cmd.Flags().StringVar(&cfg.Selector, "selector", cfg.Selector, "Selector used to filter nodes on deployment. Used to run registries on a specific set of nodes.")
 	cmd.Flags().StringVar(&cfg.ServingCertPath, "tls-certificate", cfg.ServingCertPath, "An optional path to a PEM encoded certificate (which may contain the private key) for serving over TLS")
 	cmd.Flags().StringVar(&cfg.ServingKeyPath, "tls-key", cfg.ServingKeyPath, "An optional path to a PEM encoded private key for serving over TLS")
+	cmd.Flags().StringSliceVar(&cfg.SupplementalGroups, "supplemental-groups", cfg.SupplementalGroups, "Specify supplemental groups which is an array of ID's that grants group access to registry shared storage")
+	cmd.Flags().StringVar(&cfg.FSGroup, "fs-group", "", "Specify fsGroup which is an ID that grants group access to registry block storage")
 	cmd.Flags().BoolVar(&cfg.DaemonSet, "daemonset", cfg.DaemonSet, "If true, use a daemonset instead of a deployment config.")
 	cmd.Flags().BoolVar(&cfg.EnforceQuota, "enforce-quota", cfg.EnforceQuota, "If true, the registry will refuse to write blobs if they exceed quota limits")
 
@@ -224,6 +232,23 @@ func (opts *RegistryOptions) Complete(f *clientcmd.Factory, cmd *cobra.Command, 
 		opts.nodeSelector = valid
 	}
 
+	if len(opts.Config.FSGroup) > 0 {
+		if _, err := strconv.ParseInt(opts.Config.FSGroup, 10, 64); err != nil {
+			return kcmdutil.UsageError(cmd, "invalid group ID %q specified for fsGroup (%v)", opts.Config.FSGroup, err)
+		}
+	}
+
+	if len(opts.Config.SupplementalGroups) > 0 {
+		for _, v := range opts.Config.SupplementalGroups {
+			if val, err := strconv.ParseInt(v, 10, 64); err != nil || val == 0 {
+				return kcmdutil.UsageError(cmd, "invalid group ID %q specified for supplemental group (%v)", v, err)
+			}
+		}
+	}
+	if len(opts.Config.SupplementalGroups) > 0 && len(opts.Config.FSGroup) > 0 {
+		return kcmdutil.UsageError(cmd, "fsGroup and supplemental groups cannot be specified both at the same time")
+	}
+
 	var portsErr error
 	if opts.ports, portsErr = app.ContainerPortsFromString(opts.Config.Ports); portsErr != nil {
 		return portsErr
@@ -258,7 +283,7 @@ func (opts *RegistryOptions) RunCmdRegistry() error {
 
 	output := opts.Config.Action.ShouldPrint()
 	generate := output
-	service, err := opts.serviceClient.Services(opts.namespace).Get(name)
+	service, err := opts.serviceClient.Services(opts.namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		if !generate {
 			if !errors.IsNotFound(err) {
@@ -325,7 +350,7 @@ func (opts *RegistryOptions) RunCmdRegistry() error {
 
 	mountHost := len(opts.Config.HostMount) > 0
 	podTemplate := &kapi.PodTemplateSpec{
-		ObjectMeta: kapi.ObjectMeta{Labels: opts.label},
+		ObjectMeta: metav1.ObjectMeta{Labels: opts.label},
 		Spec: kapi.PodSpec{
 			NodeSelector: opts.nodeSelector,
 			Containers: []kapi.Container{
@@ -356,6 +381,7 @@ func (opts *RegistryOptions) RunCmdRegistry() error {
 				VolumeSource: kapi.VolumeSource{},
 			}),
 			ServiceAccountName: opts.Config.ServiceAccount,
+			SecurityContext:    generateSecurityContext(opts.Config),
 		},
 	}
 	if mountHost {
@@ -370,9 +396,9 @@ func (opts *RegistryOptions) RunCmdRegistry() error {
 	}
 
 	objects = append(objects,
-		&kapi.ServiceAccount{ObjectMeta: kapi.ObjectMeta{Name: opts.Config.ServiceAccount}},
+		&kapi.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: opts.Config.ServiceAccount}},
 		&authapi.ClusterRoleBinding{
-			ObjectMeta: kapi.ObjectMeta{Name: fmt.Sprintf("registry-%s-role", opts.Config.Name)},
+			ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("registry-%s-role", opts.Config.Name)},
 			Subjects: []kapi.ObjectReference{
 				{
 					Kind:      "ServiceAccount",
@@ -389,7 +415,7 @@ func (opts *RegistryOptions) RunCmdRegistry() error {
 
 	if opts.Config.DaemonSet {
 		objects = append(objects, &extensions.DaemonSet{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:   name,
 				Labels: opts.label,
 			},
@@ -402,7 +428,7 @@ func (opts *RegistryOptions) RunCmdRegistry() error {
 		})
 	} else {
 		objects = append(objects, &deployapi.DeploymentConfig{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:   name,
 				Labels: opts.label,
 			},
@@ -436,6 +462,7 @@ func (opts *RegistryOptions) RunCmdRegistry() error {
 
 	if opts.Config.Action.ShouldPrint() {
 		mapper, _ := opts.factory.Object()
+		opts.cmd.Flag("output-version").Value.Set("extensions/v1beta1,v1")
 		fn := cmdutil.VersionedPrintObject(opts.factory.PrintObject, opts.cmd, mapper, opts.out)
 		if err := fn(list); err != nil {
 			return fmt.Errorf("unable to print object: %v", err)
@@ -501,7 +528,7 @@ func generateSecretsConfig(
 
 	if len(defaultCrt) > 0 {
 		secret := &kapi.Secret{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("%s-certs", cfg.Name),
 			},
 			Type: kapi.SecretTypeTLS,
@@ -542,4 +569,23 @@ func generateSecretsConfig(
 	extraEnv["REGISTRY_HTTP_SECRET"] = httpSecretString
 
 	return secrets, volumes, mounts, extraEnv, len(defaultCrt) > 0, nil
+}
+
+func generateSecurityContext(conf *RegistryConfig) *kapi.PodSecurityContext {
+	result := &kapi.PodSecurityContext{}
+	if len(conf.SupplementalGroups) > 0 {
+		result.SupplementalGroups = []int64{}
+		for _, val := range conf.SupplementalGroups {
+			// The errors are handled by Complete()
+			if groupID, err := strconv.ParseInt(val, 10, 64); err == nil {
+				result.SupplementalGroups = append(result.SupplementalGroups, groupID)
+			}
+		}
+	}
+	if len(conf.FSGroup) > 0 {
+		if groupID, err := strconv.ParseInt(conf.FSGroup, 10, 64); err == nil {
+			result.FSGroup = &groupID
+		}
+	}
+	return result
 }

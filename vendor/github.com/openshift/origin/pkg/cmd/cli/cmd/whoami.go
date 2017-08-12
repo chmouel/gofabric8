@@ -6,12 +6,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 
 	osclient "github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/templates"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
-	userapi "github.com/openshift/origin/pkg/user/api"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
 )
 
 const WhoAmIRecommendedCommandName = "whoami"
@@ -50,7 +51,7 @@ func NewCmdWhoAmI(name, fullName string, f *clientcmd.Factory, out io.Writer) *c
 }
 
 func (o WhoAmIOptions) WhoAmI() (*userapi.User, error) {
-	me, err := o.UserInterface.Get("~")
+	me, err := o.UserInterface.Get("~", metav1.GetOptions{})
 	if err == nil {
 		fmt.Fprintf(o.Out, "%s\n", me.Name)
 	}

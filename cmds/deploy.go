@@ -40,39 +40,43 @@ import (
 	"github.com/fabric8io/gofabric8/client"
 	"github.com/fabric8io/gofabric8/util"
 	"github.com/ghodss/yaml"
-	aapi "github.com/openshift/origin/pkg/authorization/api"
-	aapiv1 "github.com/openshift/origin/pkg/authorization/api/v1"
-	buildapi "github.com/openshift/origin/pkg/build/api"
-	buildapiv1 "github.com/openshift/origin/pkg/build/api/v1"
+	aapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
+	aapiv1 "github.com/openshift/origin/pkg/authorization/apis/authorization/v1"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildapiv1 "github.com/openshift/origin/pkg/build/apis/build/v1"
 	oclient "github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/admin/policy"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
-	deployapi "github.com/openshift/origin/pkg/deploy/api"
-	deployapiv1 "github.com/openshift/origin/pkg/deploy/api/v1"
-	oauthapi "github.com/openshift/origin/pkg/oauth/api"
-	oauthapiv1 "github.com/openshift/origin/pkg/oauth/api/v1"
-	projectapi "github.com/openshift/origin/pkg/project/api"
-	projectapiv1 "github.com/openshift/origin/pkg/project/api/v1"
-	routeapi "github.com/openshift/origin/pkg/route/api"
-	routeapiv1 "github.com/openshift/origin/pkg/route/api/v1"
+	deployapi "github.com/openshift/origin/pkg/deploy/apis/apps"
+	deployapiv1 "github.com/openshift/origin/pkg/deploy/apis/apps/v1"
+	oauthapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
+	oauthapiv1 "github.com/openshift/origin/pkg/oauth/apis/oauth/v1"
+	projectapi "github.com/openshift/origin/pkg/project/apis/project"
+	projectapiv1 "github.com/openshift/origin/pkg/project/apis/project/v1"
+	routeapi "github.com/openshift/origin/pkg/route/apis/route"
+	routeapiv1 "github.com/openshift/origin/pkg/route/apis/route/v1"
+
 	"github.com/openshift/origin/pkg/template"
-	tapi "github.com/openshift/origin/pkg/template/api"
-	tapiv1 "github.com/openshift/origin/pkg/template/api/v1"
+	tapi "github.com/openshift/origin/pkg/template/apis/template"
+	tapiv1 "github.com/openshift/origin/pkg/template/apis/template/v1"
 	"github.com/openshift/origin/pkg/template/generator"
 	"github.com/spf13/cobra"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
+	restclient "k8s.io/client-go/rest"
 	"k8s.io/kubernetes/pkg/api"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/meta"
-	"k8s.io/kubernetes/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	restclient "k8s.io/kubernetes/pkg/client/restclient"
 
+	"github.com/openshift/origin/pkg/security/apis/security"
+
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/runtime"
 )
 
 const (
@@ -456,7 +460,7 @@ func deploy(f cmdutil.Factory, d DefaultFabric8Deployment) {
 			}
 
 			if d.useTLSAcme {
-				_, err := c.Deployments("kube-lego").Get("kube-lego")
+				_, err := c.Deployments("kube-lego").Get("kube-lego", apim.GetOptions{})
 				if err != nil {
 					// deploy kube-lego
 					kubeLegoParams := getTLSAcmeEmail(c, d.tlsAcmeEmail)
@@ -727,7 +731,7 @@ func updateExposeControllerConfig(c *clientset.Clientset, ns string, apiserver s
 	// create a populate the exposecontroller config map
 	cfgms := c.ConfigMaps(ns)
 
-	_, err := cfgms.Get(exposecontrollerCM)
+	_, err := cfgms.Get(exposecontrollerCM, apim.GetOptions{})
 	if err == nil {
 		util.Infof("\nRecreating configmap %s \n", exposecontrollerCM)
 		err = cfgms.Delete(exposecontrollerCM, nil)
@@ -748,7 +752,7 @@ func updateExposeControllerConfig(c *clientset.Clientset, ns string, apiserver s
 		"config.yml": domainData + exposeData + apiserverData + namespaceData,
 	}
 	configMap := kapi.ConfigMap{
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: apim.ObjectMeta{
 			Name: exposecontrollerCM,
 			Labels: map[string]string{
 				"provider": "fabric8",
@@ -778,7 +782,7 @@ func createMissingPVs(c *clientset.Clientset, ns string) {
 					util.Infof("Recreating PVC %s\n", item.ObjectMeta.Name)
 
 					c.PersistentVolumeClaims(ns).Create(&api.PersistentVolumeClaim{
-						ObjectMeta: api.ObjectMeta{
+						ObjectMeta: apim.ObjectMeta{
 							Name:      item.ObjectMeta.Name,
 							Namespace: ns,
 						},
@@ -837,7 +841,7 @@ func getClientTypeName(typeOfMaster util.MasterType) string {
 
 func addIngressInfraLabel(c *clientset.Clientset, ns string) string {
 	nodeClient := c.Nodes()
-	nodes, err := nodeClient.List(api.ListOptions{})
+	nodes, err := nodeClient.List(apim.ListOptions{})
 	if err != nil {
 		util.Errorf("\nUnable to find any nodes: %s\n", err)
 	}
@@ -898,7 +902,7 @@ func runTemplate(c *clientset.Clientset, oc *oclient.Client, appToRun string, ns
 		}
 		createTemplate(jsonData, format, appToRun, ns, domain, apiserver, c, oc, pv, true, params)
 	} else {
-		tmpl, err := oc.Templates(ns).Get(appToRun)
+		tmpl, err := oc.Templates(ns).Get(appToRun, apim.GetOptions{})
 		if err != nil {
 			printError("Failed to load template "+appToRun, err)
 		}
@@ -918,7 +922,7 @@ func loadTemplateData(ns string, templateName string, c *clientset.Clientset, oc
 	typeOfMaster := util.TypeOfMaster(c)
 	if typeOfMaster == util.Kubernetes {
 		catalogName := "catalog-" + templateName
-		configMap, err := c.ConfigMaps(ns).Get(catalogName)
+		configMap, err := c.ConfigMaps(ns).Get(catalogName, apim.GetOptions{})
 		if err != nil {
 			return nil, "", err
 		}
@@ -933,7 +937,7 @@ func loadTemplateData(ns string, templateName string, c *clientset.Clientset, oc
 		return nil, "", fmt.Errorf("Could not find a key for the catalog %s which ends with `.json` or `.yml`", catalogName)
 
 	} else {
-		template, err := oc.Templates(ns).Get(templateName)
+		template, err := oc.Templates(ns).Get(templateName, apim.GetOptions{})
 		if err != nil {
 			return nil, "", err
 		}
@@ -1282,12 +1286,12 @@ func ensureNamespaceExists(c *clientset.Clientset, oc *oclient.Client, ns string
 	typeOfMaster := util.TypeOfMaster(c)
 	if typeOfMaster == util.Kubernetes {
 		nss := c.Namespaces()
-		_, err := nss.Get(ns)
+		_, err := nss.Get(ns, apim.GetOptions{})
 		if err != nil {
 			// lets assume it doesn't exist!
 			util.Infof("Creating new Namespace: %s\n", ns)
 			entity := kapi.Namespace{
-				ObjectMeta: kapi.ObjectMeta{
+				ObjectMeta: apim.ObjectMeta{
 					Name: ns,
 					Labels: map[string]string{
 						"provider": "fabric8",
@@ -1298,11 +1302,11 @@ func ensureNamespaceExists(c *clientset.Clientset, oc *oclient.Client, ns string
 			return err
 		}
 	} else {
-		_, err := oc.Projects().Get(ns)
+		_, err := oc.Projects().Get(ns, apim.GetOptions{})
 		if err != nil {
 			// lets assume it doesn't exist!
 			request := projectapi.ProjectRequest{
-				ObjectMeta: kapi.ObjectMeta{
+				ObjectMeta: apim.ObjectMeta{
 					Name: ns,
 					Labels: map[string]string{
 						"provider": "fabric8",
@@ -1549,7 +1553,7 @@ func mergeByteMaps(result map[string][]byte, overrides map[string][]byte) map[st
 	return result
 }
 
-func addLabelIfNotExist(metadata *api.ObjectMeta, name string, value string) bool {
+func addLabelIfNotExist(metadata *apim.ObjectMeta, name string, value string) bool {
 	if metadata.Labels == nil {
 		metadata.Labels = make(map[string]string)
 	}
@@ -1599,20 +1603,20 @@ func deployFabric8SecurityContextConstraints(c *clientset.Clientset, f cmdutil.F
 		name += "-" + ns
 	}
 	var priority int32 = 10
-	scc := kapi.SecurityContextConstraints{
-		ObjectMeta: kapi.ObjectMeta{
+	scc := security.SecurityContextConstraints{
+		ObjectMeta: apim.ObjectMeta{
 			Name: name,
 		},
 		Priority:                 &priority,
 		AllowPrivilegedContainer: true,
 		AllowHostNetwork:         true,
 		AllowHostPorts:           true,
-		Volumes:                  []kapi.FSType{kapi.FSTypeAll},
-		SELinuxContext: kapi.SELinuxContextStrategyOptions{
-			Type: kapi.SELinuxStrategyRunAsAny,
+		Volumes:                  []security.FSType{security.FSTypeAll},
+		SELinuxContext: security.SELinuxContextStrategyOptions{
+			Type: security.SELinuxStrategyRunAsAny,
 		},
-		RunAsUser: kapi.RunAsUserStrategyOptions{
-			Type: kapi.RunAsUserStrategyRunAsAny,
+		RunAsUser: security.RunAsUserStrategyOptions{
+			Type: security.RunAsUserStrategyRunAsAny,
 		},
 		Users: []string{
 			"system:serviceaccount:openshift-infra:build-controller",
@@ -1647,7 +1651,7 @@ func deployFabric8SecurityContextConstraints(c *clientset.Clientset, f cmdutil.F
 func deployFabric8SASSecurityContextConstraints(c *clientset.Clientset, f cmdutil.Factory, ns string) (Result, error) {
 	name := Fabric8SASSCC
 	scc := kapi.SecurityContextConstraints{
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: apim.ObjectMeta{
 			Name: name,
 		},
 		SELinuxContext: kapi.SELinuxContextStrategyOptions{
@@ -1690,7 +1694,7 @@ func verifyRestrictedSecurityContextConstraints(c *clientset.Clientset, f cmduti
 	rc, err := c.SecurityContextConstraints().Get(name)
 	if err != nil {
 		scc := kapi.SecurityContextConstraints{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: apim.ObjectMeta{
 				Name: RestrictedSCC,
 			},
 			SELinuxContext: kapi.SELinuxContextStrategyOptions{
@@ -1743,7 +1747,7 @@ func addServiceAccount(c *clientset.Clientset, f cmdutil.Factory, name string) (
 	_, err := sas.Get(name)
 	if err != nil {
 		sa := kapi.ServiceAccount{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: apim.ObjectMeta{
 				Name: name,
 				Labels: map[string]string{
 					"provider": "fabric8.io",

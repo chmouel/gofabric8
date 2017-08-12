@@ -23,8 +23,8 @@ import (
 	"github.com/fabric8io/gofabric8/client"
 	"github.com/fabric8io/gofabric8/util"
 	"github.com/spf13/cobra"
-	"k8s.io/kubernetes/pkg/api"
 
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
@@ -68,7 +68,7 @@ func (p *cmdCheShell) run(f cmdutil.Factory) error {
 	if cheNS == "" {
 		if isOpenshift {
 			oc, _ := client.NewOpenShiftClient(cfg)
-			projects, err := oc.Projects().List(api.ListOptions{})
+			projects, err := oc.Projects().List(apim.ListOptions{})
 			if err != nil {
 				util.Warnf("Could not list projects: %v", err)
 			} else {
@@ -86,7 +86,7 @@ func (p *cmdCheShell) run(f cmdutil.Factory) error {
 		cheNS, _, _ = f.DefaultNamespace()
 	}
 
-	pods, err := c.Pods(cheNS).List(api.ListOptions{})
+	pods, err := c.Pods(cheNS).List(apim.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("Could not list Che workspace pods in namespace %s due to %v", cheNS, err)
 	}

@@ -4,7 +4,13 @@ import (
 	g "github.com/onsi/ginkgo"
 	o "github.com/onsi/gomega"
 
+	deployutil "github.com/openshift/origin/test/extended/deployments"
 	exutil "github.com/openshift/origin/test/extended/util"
+)
+
+const (
+	a58 = "a234567890123456789012345678901234567890123456789012345678"
+	a59 = "a2345678901234567890123456789012345678901234567890123456789"
 )
 
 var _ = g.Describe("[builds][Conformance] oc new-app", func() {
@@ -19,22 +25,38 @@ var _ = g.Describe("[builds][Conformance] oc new-app", func() {
 		g.By("waiting for builder service account")
 		err := exutil.WaitForBuilderAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()))
 		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("waiting for openshift namespace imagestreams")
+		err = exutil.WaitForOpenShiftNamespaceImageStreams(oc)
+		o.Expect(err).NotTo(o.HaveOccurred())
+	})
+
+	g.AfterEach(func() {
+		deployutil.DeploymentConfigFailureTrap(oc, a58, g.CurrentGinkgoTestDescription().Failed)
+		deployutil.DeploymentConfigFailureTrap(oc, a59, g.CurrentGinkgoTestDescription().Failed)
 	})
 
 	g.It("should succeed with a --name of 58 characters", func() {
 		g.By("calling oc new-app")
-		err := oc.Run("new-app").Args("https://github.com/openshift/nodejs-ex", "--name", "a234567890123456789012345678901234567890123456789012345678").Execute()
+		err := oc.Run("new-app").Args("https://github.com/openshift/nodejs-ex", "--name", a58).Execute()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("waiting for the build to complete")
+		err = exutil.WaitForABuild(oc.Client().Builds(oc.Namespace()), a58+"-1", nil, nil, nil)
+		if err != nil {
+			exutil.DumpBuildLogs(a58, oc)
+		}
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		g.By("waiting for the deployment to complete")
-		err = exutil.WaitForADeploymentToComplete(oc.KubeClient().Core().ReplicationControllers(oc.Namespace()), "a234567890123456789012345678901234567890123456789012345678", oc)
+		err = exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.Client(), oc.Namespace(), a58, 1, oc)
 		o.Expect(err).NotTo(o.HaveOccurred())
 	})
 
 	g.It("should fail with a --name longer than 58 characters", func() {
 		g.By("calling oc new-app")
-		out, err := oc.Run("new-app").Args("https://github.com/openshift/nodejs-ex", "--name", "a2345678901234567890123456789012345678901234567890123456789").Output()
+		out, err := oc.Run("new-app").Args("https://github.com/openshift/nodejs-ex", "--name", a59).Output()
 		o.Expect(err).To(o.HaveOccurred())
-		o.Expect(out).To(o.HavePrefix("error: invalid name: "))
+		o.Expect(out).To(o.ContainSubstring("error: invalid name: "))
 	})
 })

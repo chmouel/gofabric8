@@ -21,12 +21,12 @@ import (
 	"github.com/fabric8io/gofabric8/client"
 	"github.com/fabric8io/gofabric8/util"
 	oclient "github.com/openshift/origin/pkg/client"
+	selection "github.com/openshift/origin/pkg/util/labelselector"
 	"github.com/spf13/cobra"
-	"k8s.io/kubernetes/pkg/api"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/labels"
-	"k8s.io/kubernetes/pkg/selection"
 )
 
 type validateFunc func(c *clientset.Clientset, f cmdutil.Factory) (Result, error)
@@ -154,7 +154,7 @@ func validatePersistenceVolumeClaims(c *clientset.Clientset, f cmdutil.Factory) 
 	if err != nil {
 		return Failure, err
 	}
-	rc, err := c.PersistentVolumeClaims(ns).List(api.ListOptions{})
+	rc, err := c.PersistentVolumeClaims(ns).List(apim.ListOptions{})
 	if err != nil {
 		util.Fatalf("Failed to get PersistentVolumeClaims, %s in namespace %s\n", err, ns)
 	}
@@ -214,7 +214,7 @@ func validateRouter(c *clientset.Clientset, f cmdutil.Factory) (Result, error) {
 	}
 	label := labels.NewSelector().Add(*requirement)
 
-	rc, err := c.ReplicationControllers(ns).List(api.ListOptions{LabelSelector: label})
+	rc, err := c.ReplicationControllers(ns).List(apim.ListOptions{LabelSelector: label})
 	if err != nil {
 		util.Fatalf("Failed to get PersistentVolumeClaims, %s in namespace %s\n", err, ns)
 	}
@@ -277,7 +277,7 @@ func validateConfigMaps(c *clientset.Clientset, f cmdutil.Factory) (Result, erro
 	if err != nil {
 		return Failure, err
 	}
-	list, err := c.ConfigMaps(ns).List(api.ListOptions{})
+	list, err := c.ConfigMaps(ns).List(apim.ListOptions{})
 	if err == nil && list != nil {
 		return Success, err
 	}

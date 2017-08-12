@@ -19,12 +19,12 @@ import (
 	"github.com/fabric8io/gofabric8/client"
 	"github.com/fabric8io/gofabric8/util"
 	"github.com/spf13/cobra"
-	kapi "k8s.io/kubernetes/pkg/api"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 
+	selection "github.com/openshift/origin/pkg/util/labelselector"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/labels"
-	"k8s.io/kubernetes/pkg/selection"
 )
 
 func NewCmdPackages(f cmdutil.Factory) *cobra.Command {
@@ -71,7 +71,7 @@ func listPackages(ns string, c *clientset.Clientset, fac cmdutil.Factory) error 
 	if err != nil {
 		return err
 	}
-	list, err := c.ConfigMaps(ns).List(kapi.ListOptions{
+	list, err := c.ConfigMaps(ns).List(apim.ListOptions{
 		LabelSelector: *selector,
 	})
 	if err != nil {

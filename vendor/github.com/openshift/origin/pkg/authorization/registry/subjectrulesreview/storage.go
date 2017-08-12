@@ -4,24 +4,24 @@ import (
 	"fmt"
 	"sort"
 
-	kapi "k8s.io/kubernetes/pkg/api"
-	kapierrors "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/auth/user"
-	"k8s.io/kubernetes/pkg/runtime"
-	kutilerrors "k8s.io/kubernetes/pkg/util/errors"
+	kapierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	kutilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apiserver/pkg/authentication/user"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	"github.com/openshift/origin/pkg/authorization/authorizer/scope"
+	authorizationlister "github.com/openshift/origin/pkg/authorization/generated/listers/authorization/internalversion"
 	"github.com/openshift/origin/pkg/authorization/rulevalidation"
-	"github.com/openshift/origin/pkg/client"
 )
 
 type REST struct {
 	ruleResolver        rulevalidation.AuthorizationRuleResolver
-	clusterPolicyGetter client.ClusterPolicyLister
+	clusterPolicyGetter authorizationlister.ClusterPolicyLister
 }
 
-func NewREST(ruleResolver rulevalidation.AuthorizationRuleResolver, clusterPolicyGetter client.ClusterPolicyLister) *REST {
+func NewREST(ruleResolver rulevalidation.AuthorizationRuleResolver, clusterPolicyGetter authorizationlister.ClusterPolicyLister) *REST {
 	return &REST{ruleResolver: ruleResolver, clusterPolicyGetter: clusterPolicyGetter}
 }
 
@@ -30,12 +30,12 @@ func (r *REST) New() runtime.Object {
 }
 
 // Create registers a given new ResourceAccessReview instance to r.registry.
-func (r *REST) Create(ctx kapi.Context, obj runtime.Object) (runtime.Object, error) {
+func (r *REST) Create(ctx apirequest.Context, obj runtime.Object) (runtime.Object, error) {
 	rulesReview, ok := obj.(*authorizationapi.SubjectRulesReview)
 	if !ok {
 		return nil, kapierrors.NewBadRequest(fmt.Sprintf("not a SubjectRulesReview: %#v", obj))
 	}
-	namespace := kapi.NamespaceValue(ctx)
+	namespace := apirequest.NamespaceValue(ctx)
 	if len(namespace) == 0 {
 		return nil, kapierrors.NewBadRequest(fmt.Sprintf("namespace is required on this type: %v", namespace))
 	}
@@ -49,7 +49,7 @@ func (r *REST) Create(ctx kapi.Context, obj runtime.Object) (runtime.Object, err
 		userToCheck.Extra[authorizationapi.ScopesKey] = rulesReview.Spec.Scopes
 	}
 
-	rules, errors := GetEffectivePolicyRules(kapi.WithUser(ctx, userToCheck), r.ruleResolver, r.clusterPolicyGetter)
+	rules, errors := GetEffectivePolicyRules(apirequest.WithUser(ctx, userToCheck), r.ruleResolver, r.clusterPolicyGetter)
 
 	ret := &authorizationapi.SubjectRulesReview{
 		Status: authorizationapi.SubjectRulesReviewStatus{
@@ -64,12 +64,12 @@ func (r *REST) Create(ctx kapi.Context, obj runtime.Object) (runtime.Object, err
 	return ret, nil
 }
 
-func GetEffectivePolicyRules(ctx kapi.Context, ruleResolver rulevalidation.AuthorizationRuleResolver, clusterPolicyGetter client.ClusterPolicyLister) ([]authorizationapi.PolicyRule, []error) {
-	namespace := kapi.NamespaceValue(ctx)
+func GetEffectivePolicyRules(ctx apirequest.Context, ruleResolver rulevalidation.AuthorizationRuleResolver, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]authorizationapi.PolicyRule, []error) {
+	namespace := apirequest.NamespaceValue(ctx)
 	if len(namespace) == 0 {
 		return nil, []error{kapierrors.NewBadRequest(fmt.Sprintf("namespace is required on this type: %v", namespace))}
 	}
-	user, exists := kapi.UserFrom(ctx)
+	user, exists := apirequest.UserFrom(ctx)
 	if !exists {
 		return nil, []error{kapierrors.NewBadRequest(fmt.Sprintf("user missing from context"))}
 	}
@@ -99,7 +99,7 @@ func GetEffectivePolicyRules(ctx kapi.Context, ruleResolver rulevalidation.Autho
 	return rules, errors
 }
 
-func filterRulesByScopes(rules []authorizationapi.PolicyRule, scopes []string, namespace string, clusterPolicyGetter client.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
+func filterRulesByScopes(rules []authorizationapi.PolicyRule, scopes []string, namespace string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
 	scopeRules, err := scope.ScopesToRules(scopes, namespace, clusterPolicyGetter)
 	if err != nil {
 		return nil, err

@@ -5,8 +5,8 @@ import (
 
 	"github.com/golang/glog"
 
-	"k8s.io/kubernetes/pkg/admission"
-	"k8s.io/kubernetes/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apiserver/pkg/admission"
 
 	// Admission control plug-ins used by OpenShift
 	_ "github.com/openshift/origin/pkg/authorization/admission/restrictusers"
@@ -23,18 +23,19 @@ import (
 	_ "github.com/openshift/origin/pkg/project/admission/requestlimit"
 	_ "github.com/openshift/origin/pkg/quota/admission/clusterresourceoverride"
 	_ "github.com/openshift/origin/pkg/quota/admission/clusterresourcequota"
-	_ "github.com/openshift/origin/pkg/quota/admission/resourcequota"
 	_ "github.com/openshift/origin/pkg/quota/admission/runonceduration"
 	_ "github.com/openshift/origin/pkg/scheduler/admission/podnodeconstraints"
 	_ "github.com/openshift/origin/pkg/security/admission"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/admit"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/alwayspullimages"
+	_ "k8s.io/kubernetes/plugin/pkg/admission/defaulttolerationseconds"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/exec"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/limitranger"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/namespace/exists"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/namespace/lifecycle"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/persistentvolume/label"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/podnodeselector"
+	_ "k8s.io/kubernetes/plugin/pkg/admission/podpreset"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/resourcequota"
 	_ "k8s.io/kubernetes/plugin/pkg/admission/serviceaccount"
 
@@ -43,7 +44,6 @@ import (
 	imageadmission "github.com/openshift/origin/pkg/image/admission"
 	imagepolicy "github.com/openshift/origin/pkg/image/admission/imagepolicy/api"
 	overrideapi "github.com/openshift/origin/pkg/quota/admission/clusterresourceoverride/api"
-	quotaadmission "github.com/openshift/origin/pkg/quota/admission/resourcequota"
 	serviceadmit "github.com/openshift/origin/pkg/service/admission"
 	"k8s.io/kubernetes/plugin/pkg/admission/namespace/lifecycle"
 
@@ -70,7 +70,7 @@ var (
 		"PersistentVolumeLabel",
 		"DefaultStorageClass",
 		"OwnerReferencesPermissionEnforcement",
-		quotaadmission.PluginName,
+		"ResourceQuota",
 		"openshift.io/ClusterResourceQuota",
 		"openshift.io/IngressAdmission",
 	)
@@ -87,6 +87,8 @@ var (
 		"ImagePolicyWebhook",
 		"openshift.io/RestrictSubjectBindings",
 		"LimitPodHardAntiAffinityTopology",
+		"DefaultTolerationSeconds",
+		"PodPreset", // default to off while PodPreset is alpha
 	)
 )
 

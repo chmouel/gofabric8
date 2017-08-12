@@ -11,12 +11,12 @@ import (
 	"github.com/spf13/cobra"
 
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/kubectl"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	kprinters "k8s.io/kubernetes/pkg/printers"
 
 	"github.com/openshift/origin/pkg/api/latest"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
-	"github.com/openshift/origin/pkg/template/api"
+	templateapi "github.com/openshift/origin/pkg/template/apis/template"
 )
 
 const (
@@ -78,7 +78,7 @@ func (o CreateBootstrapPolicyFileOptions) CreateBootstrapPolicyFile() error {
 		return err
 	}
 
-	policyTemplate := &api.Template{}
+	policyTemplate := &templateapi.Template{}
 
 	clusterRoles := bootstrappolicy.GetBootstrapClusterRoles()
 	for i := range clusterRoles {
@@ -122,7 +122,7 @@ func (o CreateBootstrapPolicyFileOptions) CreateBootstrapPolicyFile() error {
 	}
 
 	buffer := &bytes.Buffer{}
-	(&kubectl.JSONPrinter{}).PrintObj(versionedPolicyTemplate, buffer)
+	(&kprinters.JSONPrinter{}).PrintObj(versionedPolicyTemplate, buffer)
 
 	if err := ioutil.WriteFile(o.File, buffer.Bytes(), 0644); err != nil {
 		return err

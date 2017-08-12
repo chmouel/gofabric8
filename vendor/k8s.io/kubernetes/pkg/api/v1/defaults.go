@@ -17,13 +17,10 @@ limitations under the License.
 package v1
 
 import (
-	"k8s.io/kubernetes/pkg/runtime"
-
-	sccutil "k8s.io/kubernetes/pkg/securitycontextconstraints/util"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/kubernetes/pkg/util"
-	"k8s.io/kubernetes/pkg/util/intstr"
 	"k8s.io/kubernetes/pkg/util/parsers"
-	"k8s.io/kubernetes/pkg/util/sets"
 )
 
 func addDefaultingFuncs(scheme *runtime.Scheme) error {
@@ -42,6 +39,7 @@ func addDefaultingFuncs(scheme *runtime.Scheme) error {
 		SetDefaults_SecretVolumeSource,
 		SetDefaults_ConfigMapVolumeSource,
 		SetDefaults_DownwardAPIVolumeSource,
+		SetDefaults_ProjectedVolumeSource,
 		SetDefaults_DeprecatedDownwardAPIVolumeSource,
 		SetDefaults_Secret,
 		SetDefaults_PersistentVolume,
@@ -57,7 +55,6 @@ func addDefaultingFuncs(scheme *runtime.Scheme) error {
 		SetDefaults_ConfigMap,
 		SetDefaults_RBDVolumeSource,
 		SetDefaults_ResourceList,
-		SetDefaults_SCC,
 	)
 }
 
@@ -117,7 +114,6 @@ func SetDefaults_Container(obj *Container) {
 		_, tag, _, _ := parsers.ParseImageName(obj.Image)
 
 		// Check image tag
-
 		if tag == "latest" {
 			obj.ImagePullPolicy = PullAlways
 		} else {
@@ -126,6 +122,9 @@ func SetDefaults_Container(obj *Container) {
 	}
 	if obj.TerminationMessagePath == "" {
 		obj.TerminationMessagePath = TerminationMessagePathDefault
+	}
+	if obj.TerminationMessagePolicy == "" {
+		obj.TerminationMessagePolicy = TerminationMessageReadFile
 	}
 }
 func SetDefaults_ServiceSpec(obj *ServiceSpec) {
@@ -162,6 +161,18 @@ func SetDefaults_Pod(obj *Pod) {
 			}
 		}
 	}
+	for i := range obj.Spec.InitContainers {
+		if obj.Spec.InitContainers[i].Resources.Limits != nil {
+			if obj.Spec.InitContainers[i].Resources.Requests == nil {
+				obj.Spec.InitContainers[i].Resources.Requests = make(ResourceList)
+			}
+			for key, value := range obj.Spec.InitContainers[i].Resources.Limits {
+				if _, exists := obj.Spec.InitContainers[i].Resources.Requests[key]; !exists {
+					obj.Spec.InitContainers[i].Resources.Requests[key] = *(value.Copy())
+				}
+			}
+		}
+	}
 }
 func SetDefaults_PodSpec(obj *PodSpec) {
 	if obj.DNSPolicy == "" {
@@ -172,6 +183,7 @@ func SetDefaults_PodSpec(obj *PodSpec) {
 	}
 	if obj.HostNetwork {
 		defaultHostNetworkPorts(&obj.Containers)
+		defaultHostNetworkPorts(&obj.InitContainers)
 	}
 	if obj.SecurityContext == nil {
 		obj.SecurityContext = &PodSecurityContext{}
@@ -179,6 +191,9 @@ func SetDefaults_PodSpec(obj *PodSpec) {
 	if obj.TerminationGracePeriodSeconds == nil {
 		period := int64(DefaultTerminationGracePeriodSeconds)
 		obj.TerminationGracePeriodSeconds = &period
+	}
+	if obj.SchedulerName == "" {
+		obj.SchedulerName = DefaultSchedulerName
 	}
 }
 func SetDefaults_Probe(obj *Probe) {
@@ -224,6 +239,12 @@ func SetDefaults_DeprecatedDownwardAPIVolumeSource(obj *DeprecatedDownwardAPIVol
 func SetDefaults_Secret(obj *Secret) {
 	if obj.Type == "" {
 		obj.Type = SecretTypeOpaque
+	}
+}
+func SetDefaults_ProjectedVolumeSource(obj *ProjectedVolumeSource) {
+	if obj.DefaultMode == nil {
+		perm := int32(ProjectedVolumeSourceDefaultMode)
+		obj.DefaultMode = &perm
 	}
 }
 func SetDefaults_PersistentVolume(obj *PersistentVolume) {
@@ -362,67 +383,17 @@ func SetDefaults_RBDVolumeSource(obj *RBDVolumeSource) {
 	}
 }
 
-// Default SCCs for new fields.  FSGroup and SupplementalGroups are
-// set to the RunAsAny strategy if they are unset on the scc.
-func SetDefaults_SCC(scc *SecurityContextConstraints) {
-	if len(scc.FSGroup.Type) == 0 {
-		scc.FSGroup.Type = FSGroupStrategyRunAsAny
+func SetDefaults_ScaleIOVolumeSource(obj *ScaleIOVolumeSource) {
+	if obj.ProtectionDomain == "" {
+		obj.ProtectionDomain = "default"
 	}
-	if len(scc.SupplementalGroups.Type) == 0 {
-		scc.SupplementalGroups.Type = SupplementalGroupsStrategyRunAsAny
+	if obj.StoragePool == "" {
+		obj.StoragePool = "default"
 	}
-
-	// defaults the volume slice of the SCC.
-	// In order to support old clients the boolean fields will always take precedence.
-	defaultAllowedVolumes := fsTypeToStringSet(scc.Volumes)
-
-	// assume a nil volume slice is allowing everything for backwards compatibility
-	if defaultAllowedVolumes == nil {
-		defaultAllowedVolumes = sets.NewString(string(FSTypeAll))
+	if obj.StorageMode == "" {
+		obj.StorageMode = "ThinProvisioned"
 	}
-
-	if scc.AllowHostDirVolumePlugin {
-		// if already allowing all then there is no reason to add
-		if !defaultAllowedVolumes.Has(string(FSTypeAll)) {
-			defaultAllowedVolumes.Insert(string(FSTypeHostPath))
-		}
-	} else {
-		// we should only default all volumes if the SCC came in with FSTypeAll or we defaulted it
-		// otherwise we should only change the volumes slice to ensure that it does not conflict with
-		// the AllowHostDirVolumePlugin setting
-		shouldDefaultAllVolumes := defaultAllowedVolumes.Has(string(FSTypeAll))
-
-		// remove anything from volumes that conflicts with AllowHostDirVolumePlugin = false
-		defaultAllowedVolumes.Delete(string(FSTypeAll))
-		defaultAllowedVolumes.Delete(string(FSTypeHostPath))
-
-		if shouldDefaultAllVolumes {
-			allVolumes := sccutil.GetAllFSTypesExcept(string(FSTypeHostPath))
-			defaultAllowedVolumes.Insert(allVolumes.List()...)
-		}
+	if obj.FSType == "" {
+		obj.FSType = "xfs"
 	}
-
-	scc.Volumes = StringSetToFSType(defaultAllowedVolumes)
-}
-
-func StringSetToFSType(set sets.String) []FSType {
-	if set == nil {
-		return nil
-	}
-	volumes := []FSType{}
-	for _, v := range set.List() {
-		volumes = append(volumes, FSType(v))
-	}
-	return volumes
-}
-
-func fsTypeToStringSet(volumes []FSType) sets.String {
-	if volumes == nil {
-		return nil
-	}
-	set := sets.NewString()
-	for _, v := range volumes {
-		set.Insert(string(v))
-	}
-	return set
 }

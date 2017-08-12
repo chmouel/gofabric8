@@ -24,8 +24,8 @@ import (
 	"github.com/spf13/cobra"
 
 	oclient "github.com/openshift/origin/pkg/client"
-	deployapi "github.com/openshift/origin/pkg/deploy/api"
-	"k8s.io/kubernetes/pkg/api"
+	deployapi "github.com/openshift/origin/pkg/deploy/apis/apps"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/watch"
@@ -115,7 +115,7 @@ func handleError(err error) {
 
 func waitForDeployments(c *clientset.Clientset, ns string, waitAll bool, names []string, sleepMillis time.Duration) error {
 	if waitAll {
-		deployments, err := c.Extensions().Deployments(ns).List(api.ListOptions{})
+		deployments, err := c.Extensions().Deployments(ns).List(apim.ListOptions{})
 		if err != nil {
 			return err
 		}
@@ -139,7 +139,7 @@ func waitForDeployments(c *clientset.Clientset, ns string, waitAll bool, names [
 
 func waitForDeploymentConfigs(c *oclient.Client, ns string, waitAll bool, names []string, sleepMillis time.Duration) error {
 	if waitAll {
-		deployments, err := c.DeploymentConfigs(ns).List(api.ListOptions{})
+		deployments, err := c.DeploymentConfigs(ns).List(apim.ListOptions{})
 		if err != nil {
 			return err
 		}
@@ -204,7 +204,7 @@ func watchAndWaitForDeploymentConfig(c *oclient.Client, ns string, name string, 
 	if isDeploymentConfigAvailable(c, ns, name) {
 		return nil
 	}
-	w, err := c.DeploymentConfigs(ns).Watch(api.ListOptions{})
+	w, err := c.DeploymentConfigs(ns).Watch(apim.ListOptions{})
 	if err != nil {
 		return err
 	}

@@ -3,8 +3,9 @@ package openshift
 import (
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kapi "k8s.io/kubernetes/pkg/api"
-	apierrors "k8s.io/kubernetes/pkg/api/errors"
 	kbatch "k8s.io/kubernetes/pkg/apis/batch"
 
 	"github.com/openshift/origin/pkg/bootstrap/docker/errors"
@@ -17,7 +18,40 @@ const (
 	metricsDeployerSA      = "metrics-deployer"
 	metricsDeployerSecret  = "metrics-deployer"
 	metricsDeployerJobName = "metrics-deployer-pod"
+	metricsPlaybook        = "playbooks/byo/openshift-cluster/openshift-metrics.yml"
 )
+
+// InstallMetricsViaAnsible checks whether metrics is installed and installs it if not already installed
+func (h *Helper) InstallMetricsViaAnsible(f *clientcmd.Factory, serverIP, publicHostname, hostName, imagePrefix, imageVersion, hostConfigDir, imageStreams string) error {
+	_, kubeClient, err := f.Clients()
+	if err != nil {
+		return errors.NewError("cannot obtain API clients").WithCause(err).WithDetails(h.OriginLog())
+	}
+
+	_, err = kubeClient.Core().Services(infraNamespace).Get(svcMetrics, metav1.GetOptions{})
+	if err == nil {
+		// If there's no error, the metrics service already exists
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return errors.NewError("error retrieving metrics service").WithCause(err).WithDetails(h.OriginLog())
+	}
+
+	params := newAnsibleInventoryParams()
+	params.Template = defaultMetricsInventory
+	params.MasterIP = serverIP
+	params.MasterPublicURL = fmt.Sprintf("https://%s:8443", publicHostname)
+	params.OSERelease = imageVersion
+	params.MetricsImagePrefix = fmt.Sprintf("%s-", imagePrefix)
+	params.MetricsImageVersion = imageVersion
+	params.HawkularHostName = hostName
+	params.MetricsResolution = "10s"
+
+	runner := newAnsibleRunner(h, kubeClient, infraNamespace, imageStreams, "metrics")
+
+	//run playbook
+	return runner.RunPlaybook(params, metricsPlaybook, hostConfigDir, imagePrefix, imageVersion)
+}
 
 // InstallMetrics checks whether metrics is installed and installs it if not already installed
 func (h *Helper) InstallMetrics(f *clientcmd.Factory, hostName, imagePrefix, imageVersion string) error {
@@ -26,7 +60,7 @@ func (h *Helper) InstallMetrics(f *clientcmd.Factory, hostName, imagePrefix, ima
 		return errors.NewError("cannot obtain API clients").WithCause(err).WithDetails(h.OriginLog())
 	}
 
-	_, err = kubeClient.Core().Services(infraNamespace).Get(svcMetrics)
+	_, err = kubeClient.Core().Services(infraNamespace).Get(svcMetrics, metav1.GetOptions{})
 	if err == nil {
 		// If there's no error, the metrics service already exists
 		return nil
@@ -191,7 +225,7 @@ func metricsDeployerJob(hostName, imagePrefix, imageVersion string) *kbatch.Job 
 
 	deadline := int64(60 * 5)
 
-	meta := kapi.ObjectMeta{
+	meta := metav1.ObjectMeta{
 		Name: metricsDeployerJobName,
 	}
 
@@ -210,7 +244,7 @@ func metricsDeployerJob(hostName, imagePrefix, imageVersion string) *kbatch.Job 
 
 func MetricsHost(routingSuffix, serverIP string) string {
 	if len(routingSuffix) > 0 {
-		return fmt.Sprintf("metrics-openshift-infra.%s", routingSuffix)
+		return fmt.Sprintf("hawkular-metrics-openshift-infra.%s", routingSuffix)
 	}
-	return fmt.Sprintf("metrics-openshift-infra.%s.xip.io", serverIP)
+	return fmt.Sprintf("hawkular-metrics-openshift-infra.%s.nip.io", serverIP)
 }

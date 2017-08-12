@@ -23,12 +23,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/coreos/go-semver/semver"
 	godbus "github.com/godbus/dbus"
 	"github.com/golang/glog"
+	"k8s.io/apimachinery/pkg/util/sets"
 	utildbus "k8s.io/kubernetes/pkg/util/dbus"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
-	"k8s.io/kubernetes/pkg/util/sets"
+	utilversion "k8s.io/kubernetes/pkg/util/version"
 )
 
 type RulePosition string
@@ -40,7 +40,7 @@ const (
 
 // An injectable interface for running iptables commands.  Implementations must be goroutine-safe.
 type Interface interface {
-	// GetVersion returns the "X.Y.Z" semver string for iptables.
+	// GetVersion returns the "X.Y.Z" version string for iptables.
 	GetVersion() (string, error)
 	// EnsureChain checks if the specified chain exists and, if not, creates it.  If the chain existed, return true.
 	EnsureChain(table Table, chain Chain) (bool, error)
@@ -54,7 +54,6 @@ type Interface interface {
 	DeleteRule(table Table, chain Chain, args ...string) error
 	// IsIpv6 returns true if this is managing ipv6 tables
 	IsIpv6() bool
-	// TODO: (BenTheElder) Unit-Test Save/SaveAll, Restore/RestoreAll
 	// Save calls `iptables-save` for table.
 	Save(table Table) ([]byte, error)
 	// SaveAll calls `iptables-save`.
@@ -123,35 +122,52 @@ const MinCheckVersion = "1.4.11"
 const MinWaitVersion = "1.4.20"
 const MinWait2Version = "1.4.22"
 
+const LockfilePath16x = "/run/xtables.lock"
+
 // runner implements Interface in terms of exec("iptables").
 type runner struct {
-	mu       sync.Mutex
-	exec     utilexec.Interface
-	dbus     utildbus.Interface
-	protocol Protocol
-	hasCheck bool
-	waitFlag []string
+	mu              sync.Mutex
+	exec            utilexec.Interface
+	dbus            utildbus.Interface
+	protocol        Protocol
+	hasCheck        bool
+	waitFlag        []string
+	restoreWaitFlag []string
+	lockfilePath    string
 
 	reloadFuncs []func()
 	signal      chan *godbus.Signal
 }
 
-// New returns a new Interface which will exec iptables.
-func New(exec utilexec.Interface, dbus utildbus.Interface, protocol Protocol) Interface {
+// newInternal returns a new Interface which will exec iptables, and allows the
+// caller to change the iptables-restore lockfile path
+func newInternal(exec utilexec.Interface, dbus utildbus.Interface, protocol Protocol, lockfilePath string) Interface {
 	vstring, err := getIPTablesVersionString(exec)
 	if err != nil {
 		glog.Warningf("Error checking iptables version, assuming version at least %s: %v", MinCheckVersion, err)
 		vstring = MinCheckVersion
 	}
+
+	if lockfilePath == "" {
+		lockfilePath = LockfilePath16x
+	}
+
 	runner := &runner{
-		exec:     exec,
-		dbus:     dbus,
-		protocol: protocol,
-		hasCheck: getIPTablesHasCheckCommand(vstring),
-		waitFlag: getIPTablesWaitFlag(vstring),
+		exec:            exec,
+		dbus:            dbus,
+		protocol:        protocol,
+		hasCheck:        getIPTablesHasCheckCommand(vstring),
+		waitFlag:        getIPTablesWaitFlag(vstring),
+		restoreWaitFlag: getIPTablesRestoreWaitFlag(exec),
+		lockfilePath:    lockfilePath,
 	}
 	runner.connectToFirewallD()
 	return runner
+}
+
+// New returns a new Interface which will exec iptables.
+func New(exec utilexec.Interface, dbus utildbus.Interface, protocol Protocol) Interface {
+	return newInternal(exec, dbus, protocol, "")
 }
 
 // Destroy is part of Interface.
@@ -323,6 +339,10 @@ func (runner *runner) RestoreAll(data []byte, flush FlushFlag, counters RestoreC
 	return runner.restoreInternal(args, data, flush, counters)
 }
 
+type iptablesLocker interface {
+	Close()
+}
+
 // restoreInternal is the shared part of Restore/RestoreAll
 func (runner *runner) restoreInternal(args []string, data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
 	runner.mu.Lock()
@@ -335,9 +355,21 @@ func (runner *runner) restoreInternal(args []string, data []byte, flush FlushFla
 		args = append(args, "--counters")
 	}
 
+	// Grab the iptables lock to prevent iptables-restore and iptables
+	// from stepping on each other.  iptables-restore 1.6.2 will have
+	// a --wait option like iptables itself, but that's not widely deployed.
+	if len(runner.restoreWaitFlag) == 0 {
+		locker, err := grabIptablesLocks(runner.lockfilePath)
+		if err != nil {
+			return err
+		}
+		defer locker.Close()
+	}
+
 	// run the command and return the output or an error including the output and error
-	glog.V(4).Infof("running iptables-restore %v", args)
-	cmd := runner.exec.Command(cmdIPTablesRestore, args...)
+	fullArgs := append(runner.restoreWaitFlag, args...)
+	glog.V(4).Infof("running iptables-restore %v", fullArgs)
+	cmd := runner.exec.Command(cmdIPTablesRestore, fullArgs...)
 	cmd.SetStdin(bytes.NewBuffer(data))
 	b, err := cmd.CombinedOutput()
 	if err != nil {
@@ -462,45 +494,42 @@ func makeFullArgs(table Table, chain Chain, args ...string) []string {
 
 // Checks if iptables has the "-C" flag
 func getIPTablesHasCheckCommand(vstring string) bool {
-	minVersion, err := semver.NewVersion(MinCheckVersion)
+	minVersion, err := utilversion.ParseGeneric(MinCheckVersion)
 	if err != nil {
 		glog.Errorf("MinCheckVersion (%s) is not a valid version string: %v", MinCheckVersion, err)
 		return true
 	}
-	version, err := semver.NewVersion(vstring)
+	version, err := utilversion.ParseGeneric(vstring)
 	if err != nil {
 		glog.Errorf("vstring (%s) is not a valid version string: %v", vstring, err)
 		return true
 	}
-	if version.LessThan(*minVersion) {
-		return false
-	}
-	return true
+	return version.AtLeast(minVersion)
 }
 
 // Checks if iptables version has a "wait" flag
 func getIPTablesWaitFlag(vstring string) []string {
-	version, err := semver.NewVersion(vstring)
+	version, err := utilversion.ParseGeneric(vstring)
 	if err != nil {
 		glog.Errorf("vstring (%s) is not a valid version string: %v", vstring, err)
 		return nil
 	}
 
-	minVersion, err := semver.NewVersion(MinWaitVersion)
+	minVersion, err := utilversion.ParseGeneric(MinWaitVersion)
 	if err != nil {
 		glog.Errorf("MinWaitVersion (%s) is not a valid version string: %v", MinWaitVersion, err)
 		return nil
 	}
-	if version.LessThan(*minVersion) {
+	if version.LessThan(minVersion) {
 		return nil
 	}
 
-	minVersion, err = semver.NewVersion(MinWait2Version)
+	minVersion, err = utilversion.ParseGeneric(MinWait2Version)
 	if err != nil {
 		glog.Errorf("MinWait2Version (%s) is not a valid version string: %v", MinWait2Version, err)
 		return nil
 	}
-	if version.LessThan(*minVersion) {
+	if version.LessThan(minVersion) {
 		return []string{"-w"}
 	} else {
 		return []string{"-w2"}
@@ -515,7 +544,47 @@ func getIPTablesVersionString(exec utilexec.Interface) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	versionMatcher := regexp.MustCompile("v([0-9]+\\.[0-9]+\\.[0-9]+)")
+	versionMatcher := regexp.MustCompile("v([0-9]+(\\.[0-9]+)+)")
+	match := versionMatcher.FindStringSubmatch(string(bytes))
+	if match == nil {
+		return "", fmt.Errorf("no iptables version found in string: %s", bytes)
+	}
+	return match[1], nil
+}
+
+// Checks if iptables-restore has a "wait" flag
+// --wait support landed in v1.6.1+ right before --version support, so
+// any version of iptables-restore that supports --version will also
+// support --wait
+func getIPTablesRestoreWaitFlag(exec utilexec.Interface) []string {
+	vstring, err := getIPTablesRestoreVersionString(exec)
+	if err != nil || vstring == "" {
+		glog.V(3).Infof("couldn't get iptables-restore version; assuming it doesn't support --wait")
+		return nil
+	}
+	if _, err := utilversion.ParseGeneric(vstring); err != nil {
+		glog.V(3).Infof("couldn't parse iptables-restore version; assuming it doesn't support --wait")
+		return nil
+	}
+
+	return []string{"--wait=2"}
+}
+
+// getIPTablesRestoreVersionString runs "iptables-restore --version" to get the version string
+// in the form "X.X.X"
+func getIPTablesRestoreVersionString(exec utilexec.Interface) (string, error) {
+	// this doesn't access mutable state so we don't need to use the interface / runner
+
+	// iptables-restore hasn't always had --version, and worse complains
+	// about unrecognized commands but doesn't exit when it gets them.
+	// Work around that by setting stdin to nothing so it exits immediately.
+	cmd := exec.Command(cmdIPTablesRestore, "--version")
+	cmd.SetStdin(bytes.NewReader([]byte{}))
+	bytes, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	versionMatcher := regexp.MustCompile("v([0-9]+(\\.[0-9]+)+)")
 	match := versionMatcher.FindStringSubmatch(string(bytes))
 	if match == nil {
 		return "", fmt.Errorf("no iptables version found in string: %s", bytes)

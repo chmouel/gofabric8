@@ -3,11 +3,11 @@ package validation
 import (
 	"testing"
 
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/util/validation/field"
 
 	defaultsapi "github.com/openshift/origin/pkg/build/admission/defaults/api"
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 )
 
 func TestValidateBuildDefaultsConfig(t *testing.T) {
@@ -83,19 +83,23 @@ func TestValidateBuildDefaultsConfig(t *testing.T) {
 			errField:    "env[0].name",
 			errType:     field.ErrorTypeInvalid,
 		},
-		// 5: valueFrom present in env var
+		// 5: ResourceFieldRef present in env var
 		{
 			config: &defaultsapi.BuildDefaultsConfig{
 				Env: []kapi.EnvVar{
 					{
-						Name:      "name",
-						Value:     "test",
-						ValueFrom: &kapi.EnvVarSource{},
+						Name: "name",
+						ValueFrom: &kapi.EnvVarSource{
+							ResourceFieldRef: &kapi.ResourceFieldSelector{
+								ContainerName: "name",
+								Resource:      "resource",
+							},
+						},
 					},
 				},
 			},
 			errExpected: true,
-			errField:    "env[0].valueFrom",
+			errField:    "env[0].valueFrom.ResourceFieldRef",
 			errType:     field.ErrorTypeInvalid,
 		},
 		// 6: label: empty name

@@ -26,11 +26,10 @@ import (
 	oclient "github.com/openshift/origin/pkg/client"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/unversioned"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/labels"
 )
 
 // NewCmdCleanUp delete all fabric8 apps, environments and configurations
@@ -105,7 +104,7 @@ func deleteSystem(f cmdutil.Factory) error {
 	c, cfg := client.NewClient(f)
 	ns, _, _ := f.DefaultNamespace()
 	typeOfMaster := util.TypeOfMaster(c)
-	selector, err := unversioned.LabelSelectorAsSelector(&unversioned.LabelSelector{MatchLabels: map[string]string{"provider": "fabric8"}})
+	selector, err := apim.LabelSelectorAsSelector(&apim.LabelSelector{MatchLabels: map[string]string{"provider": "fabric8"}})
 	if err != nil {
 		return err
 	}
@@ -113,7 +112,7 @@ func deleteSystem(f cmdutil.Factory) error {
 	if typeOfMaster == util.OpenShift {
 		oc, _ = client.NewOpenShiftClient(cfg)
 		initSchema()
-		projects, err := oc.Projects().List(api.ListOptions{})
+		projects, err := oc.Projects().List(apim.ListOptions{})
 		cmdutil.CheckErr(err)
 
 		ns = detectCurrentUserProject(ns, projects.Items, c)
@@ -141,14 +140,14 @@ func deleteApp(f cmdutil.Factory, selectormap map[string]string) error {
 	ns, _, _ := f.DefaultNamespace()
 
 	typeOfMaster := util.TypeOfMaster(c)
-	selector, err := unversioned.LabelSelectorAsSelector(&unversioned.LabelSelector{MatchLabels: selectormap})
+	selector, err := apim.LabelSelectorAsSelector(&apim.LabelSelector{MatchLabels: selectormap})
 	if err != nil {
 		return err
 	}
 	if typeOfMaster == util.OpenShift {
 		oc, _ := client.NewOpenShiftClient(cfg)
 		initSchema()
-		projects, err := oc.Projects().List(api.ListOptions{})
+		projects, err := oc.Projects().List(apim.ListOptions{})
 		cmdutil.CheckErr(err)
 
 		ns = detectCurrentUserProject(ns, projects.Items, c)
@@ -296,7 +295,7 @@ func deleteDeployments(c *clientset.Clientset, ns string, selector labels.Select
 
 func deletePersistentVolumeClaims(c *clientset.Clientset, ns string, selector labels.Selector) (err error) {
 	fmt.Printf("Deleting pvc with label %s\n", selector.String())
-	pvcs, err := c.PersistentVolumeClaims(ns).List(api.ListOptions{LabelSelector: selector})
+	pvcs, err := c.PersistentVolumeClaims(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if pvcs == nil {
 		return
 	}
@@ -312,7 +311,7 @@ func deletePersistentVolumeClaims(c *clientset.Clientset, ns string, selector la
 
 func deleteReplicationControllers(c *clientset.Clientset, ns string, selector labels.Selector) error {
 	fmt.Printf("Deleting rc with label %s\n", selector.String())
-	rcs, err := c.ReplicationControllers(ns).List(api.ListOptions{LabelSelector: selector})
+	rcs, err := c.ReplicationControllers(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
@@ -328,7 +327,7 @@ func deleteReplicationControllers(c *clientset.Clientset, ns string, selector la
 func deleteReplicaSets(c *clientset.Clientset, ns string, selector labels.Selector) error {
 	fmt.Printf("Deleting ReplicaSets with label %s\n", selector.String())
 
-	rsets, err := c.ReplicaSets(ns).List(api.ListOptions{LabelSelector: selector})
+	rsets, err := c.ReplicaSets(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
@@ -343,7 +342,7 @@ func deleteReplicaSets(c *clientset.Clientset, ns string, selector labels.Select
 
 func deleteServices(c *clientset.Clientset, ns string, selector labels.Selector) error {
 	fmt.Printf("Deleting services with label %s\n", selector.String())
-	services, err := c.Services(ns).List(api.ListOptions{LabelSelector: selector})
+	services, err := c.Services(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
@@ -358,7 +357,7 @@ func deleteServices(c *clientset.Clientset, ns string, selector labels.Selector)
 
 func deleteSecrets(c *clientset.Clientset, ns string, selector labels.Selector) error {
 	fmt.Printf("Deleting secrets with label %s\n", selector.String())
-	secrets, err := c.Secrets(ns).List(api.ListOptions{LabelSelector: selector})
+	secrets, err := c.Secrets(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
@@ -373,7 +372,7 @@ func deleteSecrets(c *clientset.Clientset, ns string, selector labels.Selector) 
 
 func deleteIngress(c *clientset.Clientset, ns string, selector labels.Selector) error {
 	fmt.Printf("Deleting ingress with label %s\n", selector.String())
-	ing, err := c.Ingresses(ns).List(api.ListOptions{LabelSelector: selector})
+	ing, err := c.Ingresses(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
@@ -388,7 +387,7 @@ func deleteIngress(c *clientset.Clientset, ns string, selector labels.Selector) 
 
 func deleteConfigMaps(c *clientset.Clientset, ns string, selector labels.Selector) error {
 	fmt.Printf("Deleting configmaps with label %s\n", selector.String())
-	cmps, err := c.ConfigMaps(ns).List(api.ListOptions{LabelSelector: selector})
+	cmps, err := c.ConfigMaps(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
@@ -403,7 +402,7 @@ func deleteConfigMaps(c *clientset.Clientset, ns string, selector labels.Selecto
 
 func deleteServiceAccounts(c *clientset.Clientset, ns string, selector labels.Selector) error {
 	fmt.Printf("Deleting serviceAccount with label %s\n", selector.String())
-	sas, err := c.ServiceAccounts(ns).List(api.ListOptions{LabelSelector: selector})
+	sas, err := c.ServiceAccounts(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
@@ -418,12 +417,12 @@ func deleteServiceAccounts(c *clientset.Clientset, ns string, selector labels.Se
 
 func deletePods(c *clientset.Clientset, ns string, selector labels.Selector) error {
 	fmt.Printf("Deleting pods with label %s\n", selector.String())
-	pods, err := c.Pods(ns).List(api.ListOptions{LabelSelector: selector})
+	pods, err := c.Pods(ns).List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
 	zero := int64(0)
-	opt := &api.DeleteOptions{GracePeriodSeconds: &zero}
+	opt := &apim.DeleteOptions{GracePeriodSeconds: &zero}
 	for _, d := range pods.Items {
 		err := c.Pods(ns).Delete(d.Name, opt)
 		if err != nil {
@@ -435,7 +434,7 @@ func deletePods(c *clientset.Clientset, ns string, selector labels.Selector) err
 
 func deleteProjects(oc *oclient.Client, selector labels.Selector) error {
 	fmt.Printf("Deleting projects with label %s\n", selector.String())
-	ns, err := oc.Projects().List(api.ListOptions{LabelSelector: selector})
+	ns, err := oc.Projects().List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}
@@ -455,7 +454,7 @@ func deleteProjects(oc *oclient.Client, selector labels.Selector) error {
 
 func deleteNamespaces(c *clientset.Clientset, selector labels.Selector) error {
 	fmt.Printf("Deleting namespaces with label %s\n", selector.String())
-	ns, err := c.Namespaces().List(api.ListOptions{LabelSelector: selector})
+	ns, err := c.Namespaces().List(apim.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return err
 	}

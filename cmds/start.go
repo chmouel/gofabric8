@@ -30,8 +30,8 @@ import (
 	"github.com/fabric8io/gofabric8/util"
 	"github.com/kardianos/osext"
 	"github.com/spf13/cobra"
+	restclient "k8s.io/client-go/rest"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	restclient "k8s.io/kubernetes/pkg/client/restclient"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
 

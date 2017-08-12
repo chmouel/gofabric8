@@ -18,10 +18,10 @@ package cmds
 import (
 	"github.com/fabric8io/gofabric8/client"
 	"github.com/fabric8io/gofabric8/util"
-	rapi "github.com/openshift/origin/pkg/route/api"
-	rapiv1 "github.com/openshift/origin/pkg/route/api/v1"
+	rapi "github.com/openshift/origin/pkg/route/apis/route"
+	rapiv1 "github.com/openshift/origin/pkg/route/apis/route/v1"
 	"github.com/spf13/cobra"
-	kapi "k8s.io/kubernetes/pkg/api"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
@@ -64,12 +64,12 @@ func createIngressForDomain(ns string, domain string, c *clientset.Clientset, fa
 	rapiv1.AddToScheme(kapi.Scheme)
 
 	ingressClient := c.Extensions().Ingresses(ns)
-	ingresses, err := ingressClient.List(kapi.ListOptions{})
+	ingresses, err := ingressClient.List(apim.ListOptions{})
 	if err != nil {
 		util.Errorf("Failed to load ingresses in namespace %s with error %v", ns, err)
 		return err
 	}
-	rc, err := c.Services(ns).List(kapi.ListOptions{})
+	rc, err := c.Services(ns).List(apim.ListOptions{})
 	if err != nil {
 		util.Errorf("Failed to load services in namespace %s with error %v", ns, err)
 		return err

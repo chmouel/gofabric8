@@ -5,19 +5,22 @@ import (
 	"strings"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/resource"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/util/validation"
+	"k8s.io/kubernetes/pkg/api/v1"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
-	_ "github.com/openshift/origin/pkg/build/api/install"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	_ "github.com/openshift/origin/pkg/build/apis/build/install"
+	"github.com/openshift/origin/pkg/build/util"
 )
 
 func TestDockerCreateBuildPod(t *testing.T) {
 	strategy := DockerBuildStrategy{
 		Image: "docker-test-image",
-		Codec: kapi.Codecs.LegacyCodec(buildapi.SchemeGroupVersion),
+		Codec: kapi.Codecs.LegacyCodec(buildapi.LegacySchemeGroupVersion),
 	}
 
 	build := mockDockerBuild()
@@ -43,10 +46,10 @@ func TestDockerCreateBuildPod(t *testing.T) {
 	if container.Image != strategy.Image {
 		t.Errorf("Expected %s image, got %s!", container.Image, strategy.Image)
 	}
-	if container.ImagePullPolicy != kapi.PullIfNotPresent {
-		t.Errorf("Expected %v, got %v", kapi.PullIfNotPresent, container.ImagePullPolicy)
+	if container.ImagePullPolicy != v1.PullIfNotPresent {
+		t.Errorf("Expected %v, got %v", v1.PullIfNotPresent, container.ImagePullPolicy)
 	}
-	if actual.Spec.RestartPolicy != kapi.RestartPolicyNever {
+	if actual.Spec.RestartPolicy != v1.RestartPolicyNever {
 		t.Errorf("Expected never, got %#v", actual.Spec.RestartPolicy)
 	}
 	if len(container.Env) != 10 {
@@ -70,7 +73,7 @@ func TestDockerCreateBuildPod(t *testing.T) {
 	if len(actual.Spec.Volumes) != 4 {
 		t.Fatalf("Expected 4 volumes in Build pod, got %d", len(actual.Spec.Volumes))
 	}
-	if !kapi.Semantic.DeepEqual(container.Resources, build.Spec.Resources) {
+	if !kapi.Semantic.DeepEqual(container.Resources, util.CopyApiResourcesToV1Resources(&build.Spec.Resources)) {
 		t.Fatalf("Expected actual=expected, %v != %v", container.Resources, build.Spec.Resources)
 	}
 	found := false
@@ -90,7 +93,7 @@ func TestDockerCreateBuildPod(t *testing.T) {
 		t.Fatalf("Found illegal environment variable 'ILLEGAL' defined on container")
 	}
 
-	buildJSON, _ := runtime.Encode(kapi.Codecs.LegacyCodec(buildapi.SchemeGroupVersion), build)
+	buildJSON, _ := runtime.Encode(kapi.Codecs.LegacyCodec(buildapi.LegacySchemeGroupVersion), build)
 	errorCases := map[int][]string{
 		0: {"BUILD", string(buildJSON)},
 	}
@@ -104,7 +107,7 @@ func TestDockerCreateBuildPod(t *testing.T) {
 func TestDockerBuildLongName(t *testing.T) {
 	strategy := DockerBuildStrategy{
 		Image: "docker-test-image",
-		Codec: kapi.Codecs.LegacyCodec(buildapi.SchemeGroupVersion),
+		Codec: kapi.Codecs.LegacyCodec(buildapi.LegacySchemeGroupVersion),
 	}
 	build := mockDockerBuild()
 	build.Name = strings.Repeat("a", validation.DNS1123LabelMaxLength*2)
@@ -120,7 +123,7 @@ func TestDockerBuildLongName(t *testing.T) {
 func mockDockerBuild() *buildapi.Build {
 	timeout := int64(60)
 	return &buildapi.Build{
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: "dockerBuild",
 			Labels: map[string]string{
 				"name": "dockerBuild",

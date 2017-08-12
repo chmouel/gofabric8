@@ -3,7 +3,7 @@
 # Targets (see each target for more information):
 #   all: Build code.
 #   build: Build code.
-#   check: Run unit tests.
+#   check: Run verify, build, unit tests and cmd tests.
 #   test: Run all tests.
 #   run: Run all-in-one server
 #   clean: Clean up.
@@ -77,16 +77,19 @@ verify: build
 	{ \
 	hack/verify-gofmt.sh ||r=1;\
 	hack/verify-govet.sh ||r=1;\
-	hack/verify-generated-bootstrap-bindata.sh ||r=1;\
+	hack/verify-generated-bindata.sh ||r=1;\
 	hack/verify-generated-deep-copies.sh ||r=1;\
 	hack/verify-generated-conversions.sh ||r=1;\
 	hack/verify-generated-clientsets.sh ||r=1;\
 	hack/verify-generated-defaulters.sh ||r=1;\
+	hack/verify-generated-listers.sh ||r=1;\
+	hack/verify-generated-informers.sh ||r=1;\
 	hack/verify-generated-openapi.sh ||r=1;\
+	hack/verify-generated-protobuf.sh ||r=1;\
 	hack/verify-generated-completions.sh ||r=1;\
 	hack/verify-generated-docs.sh ||r=1;\
 	hack/verify-cli-conventions.sh ||r=1;\
-	hack/verify-generated-protobuf.sh ||r=1;\
+	hack/verify-generated-json-codecs.sh ||r=1; \
 	hack/verify-generated-swagger-descriptions.sh ||r=1;\
 	hack/verify-generated-swagger-spec.sh ||r=1;\
 	exit $$r ;\
@@ -106,20 +109,37 @@ verify-commits:
 #
 # Example:
 #   make update
-update: build
-	hack/update-generated-bootstrap-bindata.sh
+update:
+	hack/update-generated-bindata.sh
 	hack/update-generated-deep-copies.sh
 	hack/update-generated-conversions.sh
 	hack/update-generated-clientsets.sh
 	hack/update-generated-defaulters.sh
 	hack/update-generated-listers.sh
+	hack/update-generated-informers.sh
 	hack/update-generated-openapi.sh
 	hack/update-generated-protobuf.sh
+	$(MAKE) build
 	hack/update-generated-completions.sh
 	hack/update-generated-docs.sh
 	hack/update-generated-swagger-descriptions.sh
 	hack/update-generated-swagger-spec.sh
 .PHONY: update
+
+# Update all generated artifacts for the API
+#
+# Example:
+#   make update-api
+update-api:
+	hack/update-generated-deep-copies.sh
+	hack/update-generated-conversions.sh
+	hack/update-generated-defaulters.sh
+	hack/update-generated-swagger-descriptions.sh
+	hack/update-generated-protobuf.sh
+	hack/update-generated-openapi.sh
+	$(MAKE) build
+	hack/update-generated-swagger-spec.sh
+.PHONY: update-api
 
 # Build and run the complete test-suite.
 #
@@ -202,8 +222,8 @@ test-extended:
 #
 # Example:
 #   make run
-run: export OS_OUTPUT_BINPATH=$(shell bash -c 'source hack/common.sh; echo $${OS_OUTPUT_BINPATH}')
-run: export PLATFORM=$(shell bash -c 'source hack/common.sh; os::build::host_platform')
+run: export OS_OUTPUT_BINPATH=$(shell bash -c 'source hack/lib/init.sh; echo $${OS_OUTPUT_BINPATH}')
+run: export PLATFORM=$(shell bash -c 'source hack/lib/init.sh; os::build::host_platform')
 run: build
 	$(OS_OUTPUT_BINPATH)/$(PLATFORM)/openshift start
 .PHONY: run
@@ -216,12 +236,19 @@ clean:
 	rm -rf $(OUT_DIR)
 .PHONY: clean
 
+# Build an official release of OpenShift for all platforms and the images that depend on it.
+#
+# Example:
+#   make release
+official-release: build-cross build-rpms
+	hack/build-images.sh
+.PHONY: official-release
+
 # Build a release of OpenShift for linux/amd64 and the images that depend on it.
 #
 # Example:
 #   make release
-release: clean
-	OS_ONLY_BUILD_PLATFORMS="linux/amd64" hack/build-release.sh
+release: build-rpms
 	hack/build-images.sh
 	hack/extract-release.sh
 .PHONY: release
@@ -230,7 +257,7 @@ release: clean
 #
 # Example:
 #   make release-binaries
-release-binaries: clean
+release-binaries:
 	hack/build-release.sh
 	hack/extract-release.sh
 .PHONY: release-binaries
@@ -239,7 +266,7 @@ release-binaries: clean
 #
 # Example:
 #   make build-cross
-build-cross: clean
+build-cross:
 	hack/build-cross.sh
 .PHONY: build-cross
 
@@ -270,17 +297,6 @@ build-rpms:
 build-rpms-redistributable:
 	hack/build-rpm-release.sh
 .PHONY: build-rpms-redistributable
-
-# Build a release of OpenShift using tito for linux/amd64 and the images that depend on it.
-#
-# Args:
-#
-# Example:
-#   make release-rpms
-release-rpms: clean build-rpms
-	hack/build-images.sh
-	hack/extract-release.sh
-.PHONY: release
 
 # Vendor the Origin Web Console
 #

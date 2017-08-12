@@ -4,14 +4,15 @@ import (
 	"testing"
 
 	kapi "k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/v1"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 )
 
 func TestSetupDockerSocketHostSocket(t *testing.T) {
-	pod := kapi.Pod{
-		Spec: kapi.PodSpec{
-			Containers: []kapi.Container{
+	pod := v1.Pod{
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
 				{},
 			},
 		},
@@ -57,7 +58,7 @@ func TestSetupDockerSocketHostSocket(t *testing.T) {
 	}
 }
 
-func isVolumeSourceEmpty(volumeSource kapi.VolumeSource) bool {
+func isVolumeSourceEmpty(volumeSource v1.VolumeSource) bool {
 	if volumeSource.EmptyDir == nil &&
 		volumeSource.HostPath == nil &&
 		volumeSource.GCEPersistentDisk == nil &&
@@ -68,40 +69,10 @@ func isVolumeSourceEmpty(volumeSource kapi.VolumeSource) bool {
 	return false
 }
 
-func TestTrustedMergeEnvWithoutDuplicates(t *testing.T) {
-	input := []kapi.EnvVar{
-		{Name: "foo", Value: "bar"},
-		{Name: "input", Value: "inputVal"},
-		{Name: "BUILD_LOGLEVEL", Value: "loglevel"},
-	}
-	output := []kapi.EnvVar{
-		{Name: "foo", Value: "test"},
-	}
-
-	mergeTrustedEnvWithoutDuplicates(input, &output)
-
-	if len(output) != 2 {
-		t.Errorf("Expected output to contain input items len==2 (%d)", len(output))
-	}
-
-	if output[0].Name != "foo" {
-		t.Errorf("Expected output to have env 'foo', got %+v", output[0])
-	}
-	if output[0].Value != "test" {
-		t.Errorf("Expected output env 'foo' to have value 'test', got %+v", output[0])
-	}
-	if output[1].Name != "BUILD_LOGLEVEL" {
-		t.Errorf("Expected output to have env 'BUILD_LOGLEVEL', got %+v", output[1])
-	}
-	if output[1].Value != "loglevel" {
-		t.Errorf("Expected output env 'BUILD_LOGLEVEL' to have value 'loglevel', got %+v", output[1])
-	}
-}
-
 func TestSetupDockerSecrets(t *testing.T) {
-	pod := kapi.Pod{
-		Spec: kapi.PodSpec{
-			Containers: []kapi.Container{
+	pod := v1.Pod{
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
 				{},
 			},
 		},

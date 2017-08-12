@@ -9,25 +9,23 @@ os::util::environment::setup_time_vars
 
 os::build::setup_env
 
-function cleanup()
-{
-	out=$?
+function cleanup() {
+	return_code=$?
+
 	docker rmi test/scratchimage
-	cleanup_openshift
 
-	os::test::junit::generate_oscmd_report
-
-	os::log::info "Exiting"
-	return "${out}"
+	os::test::junit::generate_report
+	os::cleanup::all
+	os::util::describe_return_code "${return_code}"
+	exit "${return_code}"
 }
-
-trap "exit" INT TERM
 trap "cleanup" EXIT
 
 os::log::info "Starting server"
 
 os::util::environment::use_sudo
-os::util::environment::setup_all_server_vars "test-extended/cmd/"
+os::cleanup::tmpdir
+os::util::environment::setup_all_server_vars
 
 os::log::system::start
 
@@ -182,7 +180,7 @@ os::test::junit::declare_suite_end
 
 os::test::junit::declare_suite_start "extended/cmd/oc-on-kube"
 os::cmd::expect_success "oc login -u system:admin -n default"
-os::cmd::expect_success "oc new-project kube"
+os::cmd::expect_success "oc new-project kubeapi"
 os::cmd::expect_success "oc create -f test/testdata/kubernetes-server/apiserver.yaml"
 os::cmd::try_until_text "oc get pods/kube-apiserver -o 'jsonpath={.status.conditions[?(@.type == "Ready")].status}'" "True"
 os::cmd::try_until_text "oc get pods/kube-apiserver -o 'jsonpath={.status.podIP}'" "172"

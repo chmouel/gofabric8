@@ -7,13 +7,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	kerrors "k8s.io/kubernetes/pkg/util/errors"
 
 	"github.com/openshift/origin/pkg/cmd/templates"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
 
-	sdnapi "github.com/openshift/origin/pkg/sdn/api"
+	sdnapi "github.com/openshift/origin/pkg/sdn/apis/network"
 )
 
 const JoinProjectsNetworkCommandName = "join-projects"

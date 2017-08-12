@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"reflect"
@@ -23,16 +24,14 @@ import (
 	"github.com/docker/distribution/registry/storage/driver/inmemory"
 	"github.com/docker/libtrust"
 
-	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
-	"k8s.io/kubernetes/pkg/client/testing/core"
-	"k8s.io/kubernetes/pkg/util/diff"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/diff"
+	clientgotesting "k8s.io/client-go/testing"
 
 	"github.com/openshift/origin/pkg/client"
-	"github.com/openshift/origin/pkg/client/testclient"
+	"github.com/openshift/origin/pkg/dockerregistry/server/configuration"
 	registrytest "github.com/openshift/origin/pkg/dockerregistry/testutil"
-	imagetest "github.com/openshift/origin/pkg/image/admission/testutil"
-	imageapi "github.com/openshift/origin/pkg/image/api"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 )
 
 const (
@@ -104,7 +103,7 @@ func TestRepositoryBlobStat(t *testing.T) {
 		{
 			name:               "local stat",
 			stat:               "nm/is@" + testImages["nm/is:latest"][0].DockerImageLayers[0].Name,
-			imageStreams:       []imageapi.ImageStream{{ObjectMeta: kapi.ObjectMeta{Namespace: "nm", Name: "is"}}},
+			imageStreams:       []imageapi.ImageStream{{ObjectMeta: metav1.ObjectMeta{Namespace: "nm", Name: "is"}}},
 			expectedDescriptor: testNewDescriptorForLayer(testImages["nm/is:latest"][0].DockerImageLayers[0]),
 		},
 
@@ -114,7 +113,7 @@ func TestRepositoryBlobStat(t *testing.T) {
 			images: []imageapi.Image{*testImages["nm/repo:missing-layer-links"][0]},
 			imageStreams: []imageapi.ImageStream{
 				{
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "nm",
 						Name:      "repo",
 					},
@@ -141,7 +140,7 @@ func TestRepositoryBlobStat(t *testing.T) {
 			images: []imageapi.Image{*testImages["nm/unmanaged:missing-layer-links"][0]},
 			imageStreams: []imageapi.ImageStream{
 				{
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "nm",
 						Name:      "unmanaged",
 					},
@@ -179,7 +178,7 @@ func TestRepositoryBlobStat(t *testing.T) {
 			images: []imageapi.Image{*testImages["nm/unmanaged:missing-layer-links"][0]},
 			imageStreams: []imageapi.ImageStream{
 				{
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "nm",
 						Name:      "repo",
 					},
@@ -206,7 +205,7 @@ func TestRepositoryBlobStat(t *testing.T) {
 			images: []imageapi.Image{*etcdOnlyImages["nm/is"]},
 			imageStreams: []imageapi.ImageStream{
 				{
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "nm",
 						Name:      "is",
 					},
@@ -232,7 +231,7 @@ func TestRepositoryBlobStat(t *testing.T) {
 			images: []imageapi.Image{*testImages["nm/is:latest"][0]},
 			imageStreams: []imageapi.ImageStream{
 				{
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "nm",
 						Name:      "repo",
 					},
@@ -255,7 +254,7 @@ func TestRepositoryBlobStat(t *testing.T) {
 		{
 			name:          "auth not performed",
 			stat:          "nm/is@" + testImages["nm/is:latest"][0].DockerImageLayers[0].Name,
-			imageStreams:  []imageapi.ImageStream{{ObjectMeta: kapi.ObjectMeta{Namespace: "nm", Name: "is"}}},
+			imageStreams:  []imageapi.ImageStream{{ObjectMeta: metav1.ObjectMeta{Namespace: "nm", Name: "is"}}},
 			skipAuth:      true,
 			expectedError: fmt.Errorf("openshift.auth.completed missing from context"),
 		},
@@ -263,7 +262,7 @@ func TestRepositoryBlobStat(t *testing.T) {
 		{
 			name:           "deferred error",
 			stat:           "nm/is@" + testImages["nm/is:latest"][0].DockerImageLayers[0].Name,
-			imageStreams:   []imageapi.ImageStream{{ObjectMeta: kapi.ObjectMeta{Namespace: "nm", Name: "is"}}},
+			imageStreams:   []imageapi.ImageStream{{ObjectMeta: metav1.ObjectMeta{Namespace: "nm", Name: "is"}}},
 			deferredErrors: deferredErrors{"nm/is": ErrOpenShiftAccessDenied},
 			expectedError:  ErrOpenShiftAccessDenied,
 		},
@@ -285,16 +284,29 @@ func TestRepositoryBlobStat(t *testing.T) {
 		}
 
 		ctx := context.Background()
+		ctx = WithConfiguration(ctx, &configuration.Configuration{})
 		if !tc.skipAuth {
-			ctx = WithAuthPerformed(ctx)
+			ctx = withAuthPerformed(ctx)
 		}
 		if tc.deferredErrors != nil {
-			ctx = WithDeferredErrors(ctx, tc.deferredErrors)
+			ctx = withDeferredErrors(ctx, tc.deferredErrors)
 		}
 
-		client := &testclient.Fake{}
-		client.AddReactor("get", "imagestreams", imagetest.GetFakeImageStreamGetHandler(t, tc.imageStreams...))
-		client.AddReactor("get", "images", registrytest.GetFakeImageGetHandler(t, tc.images...))
+		fos, client := registrytest.NewFakeOpenShiftWithClient()
+
+		for _, is := range tc.imageStreams {
+			_, err = fos.CreateImageStream(is.Namespace, &is)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		for _, image := range tc.images {
+			_, err = fos.CreateImage(&image)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 
 		reg, err := newTestRegistry(ctx, client, driver, defaultBlobRepositoryCacheTTL, tc.pullthrough, true)
 		if err != nil {
@@ -333,7 +345,8 @@ func TestRepositoryBlobStatCacheEviction(t *testing.T) {
 	const blobRepoCacheTTL = time.Millisecond * 500
 
 	quotaEnforcing = &quotaEnforcingConfig{}
-	ctx := WithAuthPerformed(context.Background())
+	ctx := withAuthPerformed(context.Background())
+	ctx = WithConfiguration(ctx, &configuration.Configuration{})
 
 	// this driver holds all the testing blobs in memory during the whole test run
 	driver := inmemory.New()
@@ -343,7 +356,6 @@ func TestRepositoryBlobStatCacheEviction(t *testing.T) {
 		t.Fatal(err)
 	}
 	testImage := testImages["nm/is:latest"][0]
-	testImageStream := registrytest.TestNewImageStreamObject("nm", "is", "latest", testImage.Name, "")
 
 	blob1Desc := testNewDescriptorForLayer(testImage.DockerImageLayers[0])
 	blob1Dgst := blob1Desc.Digest
@@ -359,9 +371,9 @@ func TestRepositoryBlobStatCacheEviction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client := &testclient.Fake{}
-	client.AddReactor("get", "imagestreams", imagetest.GetFakeImageStreamGetHandler(t, *testImageStream))
-	client.AddReactor("get", "images", registrytest.GetFakeImageGetHandler(t, *testImage))
+	fos, client := registrytest.NewFakeOpenShiftWithClient()
+	registrytest.AddImageStream(t, fos, "nm", "is", nil)
+	registrytest.AddImage(t, fos, testImage, "nm", "is", "latest")
 
 	reg, err := newTestRegistry(ctx, client, driver, blobRepoCacheTTL, false, false)
 	if err != nil {
@@ -531,11 +543,10 @@ func storeTestImage(
 	}
 
 	for i := 0; i < testImageLayerCount; i++ {
-		rs, ds, err := registrytest.CreateRandomTarFile()
+		payload, err := registrytest.CreateRandomTarFile()
 		if err != nil {
 			return nil, fmt.Errorf("unexpected error generating test layer file: %v", err)
 		}
-		dgst := digest.Digest(ds)
 
 		wr, err := repo.Blobs(ctx).Create(ctx)
 		if err != nil {
@@ -543,10 +554,12 @@ func storeTestImage(
 		}
 		defer wr.Close()
 
-		n, err := io.Copy(wr, rs)
+		n, err := io.Copy(wr, bytes.NewReader(payload))
 		if err != nil {
 			return nil, fmt.Errorf("unexpected error copying to upload: %v", err)
 		}
+
+		dgst := digest.FromBytes(payload)
 
 		if schemaVersion == 1 {
 			m1.FSLayers = append(m1.FSLayers, schema1.FSLayer{BlobSum: dgst})
@@ -581,7 +594,7 @@ func storeTestImage(
 	} //TODO v2
 
 	image := &imageapi.Image{
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: dgst.String(),
 		},
 		DockerImageManifest:  string(payload),
@@ -714,8 +727,6 @@ func (reg *testRegistry) Repository(ctx context.Context, ref reference.Named) (d
 		return nil, err
 	}
 
-	kFakeClient := fake.NewSimpleClientset()
-
 	parts := strings.SplitN(ref.Name(), "/", 3)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("failed to parse repository name %q", ref.Name())
@@ -734,8 +745,7 @@ func (reg *testRegistry) Repository(ctx context.Context, ref reference.Named) (d
 		Repository: repo,
 
 		ctx:              ctx,
-		quotaClient:      kFakeClient.Core(),
-		limitClient:      kFakeClient.Core(),
+		limitClient:      nil,
 		registryOSClient: reg.osClient,
 		registryAddr:     "localhost:5000",
 		namespace:        nm,
@@ -768,7 +778,7 @@ func testNewDescriptorForLayer(layer imageapi.ImageLayer) distribution.Descripto
 	}
 }
 
-func compareActions(t *testing.T, testCaseName string, actions []core.Action, expectedActions []clientAction) {
+func compareActions(t *testing.T, testCaseName string, actions []clientgotesting.Action, expectedActions []clientAction) {
 	for i, action := range actions {
 		if i >= len(expectedActions) {
 			t.Errorf("[%s] got unexpected client action: %#+v", testCaseName, action)

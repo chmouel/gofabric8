@@ -21,17 +21,20 @@ import (
 	"github.com/openshift/source-to-image/pkg/tar"
 	s2iutil "github.com/openshift/source-to-image/pkg/util"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/third_party/forked/golang/netutil"
+	restclient "k8s.io/client-go/rest"
+	kclientcmd "k8s.io/client-go/tools/clientcmd"
 	kapi "k8s.io/kubernetes/pkg/api"
-	kerrors "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/meta"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/client/restclient"
-	kclientcmd "k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
-	"k8s.io/kubernetes/pkg/fields"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/third_party/forked/golang/netutil"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildapiv1 "github.com/openshift/origin/pkg/build/apis/build/v1"
 	osclient "github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/templates"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
@@ -97,6 +100,7 @@ func NewCmdStartBuild(fullName string, f *clientcmd.Factory, in io.Reader, out, 
 	}
 	cmd.Flags().StringVar(&o.LogLevel, "build-loglevel", o.LogLevel, "Specify the log level for the build log output")
 	cmd.Flags().StringArrayVarP(&o.Env, "env", "e", o.Env, "Specify a key-value pair for an environment variable to set for the build container.")
+	cmd.Flags().StringArrayVar(&o.Args, "build-arg", o.Args, "Specify a key-value pair to pass to Docker during the build.")
 	cmd.Flags().StringVar(&o.FromBuild, "from-build", o.FromBuild, "Specify the name of a build which should be re-run")
 
 	cmd.Flags().BoolVarP(&o.Follow, "follow", "F", o.Follow, "Start a build and watch its logs until it completes or fails")
@@ -133,7 +137,8 @@ type StartBuildOptions struct {
 	FromRepo    string
 	FromArchive string
 
-	Env []string
+	Env  []string
+	Args []string
 
 	Follow          bool
 	WaitForComplete bool
@@ -149,6 +154,7 @@ type StartBuildOptions struct {
 	AsBinary    bool
 	ShortOutput bool
 	EnvVar      []kapi.EnvVar
+	BuildArgs   []kapi.EnvVar
 	Name        string
 	Namespace   string
 }
@@ -234,10 +240,10 @@ func (o *StartBuildOptions) Complete(f *clientcmd.Factory, in io.Reader, out, er
 		if err != nil {
 			return err
 		}
-		switch resource {
-		case buildapi.Resource("buildconfigs"):
+		switch {
+		case buildapi.IsResourceOrLegacy("buildconfigs", resource):
 			// no special handling required
-		case buildapi.Resource("builds"):
+		case buildapi.IsResourceOrLegacy("builds", resource):
 			if len(o.ListWebhooks) == 0 {
 				return fmt.Errorf("use --from-build to rerun your builds")
 			}
@@ -245,9 +251,10 @@ func (o *StartBuildOptions) Complete(f *clientcmd.Factory, in io.Reader, out, er
 			return fmt.Errorf("invalid resource provided: %v", resource)
 		}
 	}
+
 	// when listing webhooks, allow --from-build to lookup a build config
-	if resource == buildapi.Resource("builds") && len(o.ListWebhooks) > 0 {
-		build, err := client.Builds(namespace).Get(name)
+	if buildapi.IsResourceOrLegacy("builds", resource) && len(o.ListWebhooks) > 0 {
+		build, err := client.Builds(namespace).Get(name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -268,6 +275,7 @@ func (o *StartBuildOptions) Complete(f *clientcmd.Factory, in io.Reader, out, er
 	o.Namespace = namespace
 	o.Name = name
 
+	// Handle environment variables
 	cmdutil.WarnAboutCommaSeparation(o.ErrOut, o.Env, "--env")
 	env, _, err := cmdutil.ParseEnv(o.Env, in)
 	if err != nil {
@@ -277,6 +285,14 @@ func (o *StartBuildOptions) Complete(f *clientcmd.Factory, in io.Reader, out, er
 		env = append(env, kapi.EnvVar{Name: "BUILD_LOGLEVEL", Value: buildLogLevel})
 	}
 	o.EnvVar = env
+
+	// Handle Docker build arguments. In order to leverage existing logic, we
+	// first create an EnvVar array, then convert it to []docker.BuildArg
+	buildArgs, err := cmdutil.ParseBuildArg(o.Args, in)
+	if err != nil {
+		return err
+	}
+	o.BuildArgs = buildArgs
 
 	return nil
 }
@@ -297,11 +313,19 @@ func (o *StartBuildOptions) Run() error {
 				Message: buildapi.BuildTriggerCauseManualMsg,
 			},
 		),
-		ObjectMeta: kapi.ObjectMeta{Name: o.Name},
+		ObjectMeta: metav1.ObjectMeta{Name: o.Name},
 	}
+
 	if len(o.EnvVar) > 0 {
 		request.Env = o.EnvVar
 	}
+
+	if len(o.BuildArgs) > 0 {
+		request.DockerStrategyOptions = &buildapi.DockerStrategyOptions{
+			BuildArgs: o.BuildArgs,
+		}
+	}
+
 	if len(o.Commit) > 0 {
 		request.Revision = &buildapi.SourceRevision{
 			Git: &buildapi.GitSourceRevision{
@@ -315,7 +339,7 @@ func (o *StartBuildOptions) Run() error {
 	switch {
 	case o.AsBinary:
 		request := &buildapi.BinaryBuildRequestOptions{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      o.Name,
 				Namespace: o.Namespace,
 			},
@@ -323,6 +347,9 @@ func (o *StartBuildOptions) Run() error {
 		}
 		if len(o.EnvVar) > 0 {
 			fmt.Fprintf(o.ErrOut, "WARNING: Specifying environment variables with binary builds is not supported.\n")
+		}
+		if len(o.BuildArgs) > 0 {
+			fmt.Fprintf(o.ErrOut, "WARNING: Specifying build arguments with binary builds is not supported.\n")
 		}
 		if newBuild, err = streamPathToBuild(o.Git, o.In, o.ErrOut, o.Client.BuildConfigs(o.Namespace), o.FromDir, o.FromFile, o.FromRepo, request); err != nil {
 			if kerrors.IsAlreadyExists(err) {
@@ -403,7 +430,7 @@ func (o *StartBuildOptions) RunListBuildWebHooks() error {
 	}
 	client := o.Client
 
-	config, err := client.BuildConfigs(o.Namespace).Get(o.Name)
+	config, err := client.BuildConfigs(o.Namespace).Get(o.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -554,7 +581,10 @@ func streamPathToBuild(repo git.Repository, in io.Reader, out io.Writer, client 
 					return nil, err
 				}
 				if err := repo.Checkout(tempDirectory, commit); err != nil {
-					return nil, err
+					err = repo.PotentialPRRetryAsFetch(tempDirectory, path, commit, err)
+					if err != nil {
+						return nil, err
+					}
 				}
 
 				// We'll continue to use tar on the temp directory
@@ -665,7 +695,7 @@ func (o *StartBuildOptions) RunStartBuildWebHook() error {
 	if hook.Scheme == "https" {
 		config, err := o.ClientConfig.ClientConfig()
 		if err == nil {
-			if url, _, err := restclient.DefaultServerURL(config.Host, "", unversioned.GroupVersion{}, true); err == nil {
+			if url, _, err := restclient.DefaultServerURL(config.Host, "", schema.GroupVersion{}, true); err == nil {
 				if netutil.CanonicalAddr(url) == netutil.CanonicalAddr(hook) && url.Scheme == hook.Scheme {
 					if rt, err := restclient.TransportFor(config); err == nil {
 						httpClient = &http.Client{Transport: rt}
@@ -687,6 +717,20 @@ func (o *StartBuildOptions) RunStartBuildWebHook() error {
 		body, _ := ioutil.ReadAll(resp.Body)
 		return fmt.Errorf("server rejected our request %d\nremote: %s", resp.StatusCode, string(body))
 	}
+
+	body, _ := ioutil.ReadAll(resp.Body)
+	if len(body) > 0 {
+		// In later server versions we return the created Build in the body.
+		var newBuild buildapi.Build
+		if err = json.Unmarshal(body, &buildapiv1.Build{}); err == nil {
+			if err = runtime.DecodeInto(kapi.Codecs.UniversalDecoder(), body, &newBuild); err != nil {
+				return err
+			}
+
+			kcmdutil.PrintSuccess(o.Mapper, o.ShortOutput, o.Out, "build", newBuild.Name, false, "started")
+		}
+	}
+
 	return nil
 }
 
@@ -774,7 +818,7 @@ func WaitForBuildComplete(c osclient.BuildInterface, name string) error {
 			b.Status.Phase == buildapi.BuildPhaseError
 	}
 	for {
-		list, err := c.List(kapi.ListOptions{FieldSelector: fields.Set{"name": name}.AsSelector()})
+		list, err := c.List(metav1.ListOptions{FieldSelector: fields.Set{"name": name}.AsSelector().String()})
 		if err != nil {
 			return err
 		}
@@ -788,7 +832,7 @@ func WaitForBuildComplete(c osclient.BuildInterface, name string) error {
 		}
 
 		rv := list.ResourceVersion
-		w, err := c.Watch(kapi.ListOptions{FieldSelector: fields.Set{"name": name}.AsSelector(), ResourceVersion: rv})
+		w, err := c.Watch(metav1.ListOptions{FieldSelector: fields.Set{"name": name}.AsSelector().String(), ResourceVersion: rv})
 		if err != nil {
 			return err
 		}

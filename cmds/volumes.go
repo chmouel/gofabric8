@@ -25,6 +25,7 @@ import (
 	"github.com/fabric8io/gofabric8/client"
 	"github.com/fabric8io/gofabric8/util"
 	"github.com/spf13/cobra"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/resource"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
@@ -94,7 +95,7 @@ func NewCmdVolumes(f cmdutil.Factory) *cobra.Command {
 
 func findPendingPVs(c *clientset.Clientset, ns string) (bool, *api.PersistentVolumeClaimList, []string) {
 
-	pvcs, err := c.PersistentVolumeClaims(ns).List(api.ListOptions{})
+	pvcs, err := c.PersistentVolumeClaims(ns).List(apim.ListOptions{})
 
 	if err != nil {
 		util.Infof("Failed to find any PersistentVolumeClaims, %s in namespace %s\n", err, ns)
@@ -122,7 +123,7 @@ func createPV(c *clientset.Clientset, ns string, pvcNames []string, sshCommand s
 		hostPath := path.Join("/data", ns, pvcName)
 		nsPvcName := ns + "-" + pvcName
 		pvs := c.PersistentVolumes()
-		rc, err := pvs.List(api.ListOptions{})
+		rc, err := pvs.List(apim.ListOptions{})
 		if err != nil {
 			util.Errorf("Failed to load PersistentVolumes with error %v\n", err)
 		}

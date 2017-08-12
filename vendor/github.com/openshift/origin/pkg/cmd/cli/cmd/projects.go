@@ -5,10 +5,10 @@ import (
 	"io"
 	"sort"
 
+	restclient "k8s.io/client-go/rest"
+	kclientcmd "k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	kclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	"k8s.io/kubernetes/pkg/client/restclient"
-	kclientcmd "k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
-	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 
 	oapi "github.com/openshift/origin/pkg/api"
@@ -16,8 +16,8 @@ import (
 	cliconfig "github.com/openshift/origin/pkg/cmd/cli/config"
 	"github.com/openshift/origin/pkg/cmd/templates"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
-	"github.com/openshift/origin/pkg/project/api"
-	projectapihelpers "github.com/openshift/origin/pkg/project/api/helpers"
+	projectapi "github.com/openshift/origin/pkg/project/apis/project"
+	projectapihelpers "github.com/openshift/origin/pkg/project/apis/project/helpers"
 
 	"github.com/spf13/cobra"
 )
@@ -37,7 +37,7 @@ type ProjectsOptions struct {
 }
 
 // SortByProjectName is sort
-type SortByProjectName []api.Project
+type SortByProjectName []projectapi.Project
 
 func (p SortByProjectName) Len() int {
 	return len(p)

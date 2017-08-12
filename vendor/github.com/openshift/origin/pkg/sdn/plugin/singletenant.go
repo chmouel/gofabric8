@@ -1,7 +1,7 @@
 package plugin
 
 import (
-	osapi "github.com/openshift/origin/pkg/sdn/api"
+	osapi "github.com/openshift/origin/pkg/sdn/apis/network"
 )
 
 type singleTenantPlugin struct{}
@@ -15,7 +15,7 @@ func (sp *singleTenantPlugin) Name() string {
 }
 
 func (sp *singleTenantPlugin) Start(node *OsdnNode) error {
-	otx := node.ovs.NewTransaction()
+	otx := node.oc.NewTransaction()
 	otx.AddFlow("table=80, priority=200, actions=output:NXM_NX_REG2[]")
 	return otx.EndTransaction()
 }
@@ -41,8 +41,8 @@ func (sp *singleTenantPlugin) GetMulticastEnabled(vnid uint32) bool {
 	return false
 }
 
-func (sp *singleTenantPlugin) RefVNID(vnid uint32) {
+func (sp *singleTenantPlugin) EnsureVNIDRules(vnid uint32) {
 }
 
-func (sp *singleTenantPlugin) UnrefVNID(vnid uint32) {
+func (sp *singleTenantPlugin) SyncVNIDRules() {
 }

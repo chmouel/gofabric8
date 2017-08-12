@@ -1,10 +1,12 @@
 package test
 
 import (
-	kapi "k8s.io/kubernetes/pkg/api"
-	kerrs "k8s.io/kubernetes/pkg/api/errors"
+	kerrs "k8s.io/apimachinery/pkg/api/errors"
+	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 
-	"github.com/openshift/origin/pkg/user/api"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
 )
 
 type Action struct {
@@ -14,16 +16,16 @@ type Action struct {
 
 type IdentityRegistry struct {
 	GetErr map[string]error
-	Get    map[string]*api.Identity
+	Get    map[string]*userapi.Identity
 
 	CreateErr error
-	Create    *api.Identity
+	Create    *userapi.Identity
 
 	UpdateErr error
-	Update    *api.Identity
+	Update    *userapi.Identity
 
 	ListErr error
-	List    *api.IdentityList
+	List    *userapi.IdentityList
 
 	Actions *[]Action
 }
@@ -31,12 +33,12 @@ type IdentityRegistry struct {
 func NewIdentityRegistry() *IdentityRegistry {
 	return &IdentityRegistry{
 		GetErr:  map[string]error{},
-		Get:     map[string]*api.Identity{},
+		Get:     map[string]*userapi.Identity{},
 		Actions: &[]Action{},
 	}
 }
 
-func (r *IdentityRegistry) GetIdentity(ctx kapi.Context, name string) (*api.Identity, error) {
+func (r *IdentityRegistry) GetIdentity(ctx apirequest.Context, name string, options *metav1.GetOptions) (*userapi.Identity, error) {
 	*r.Actions = append(*r.Actions, Action{"GetIdentity", name})
 	if identity, ok := r.Get[name]; ok {
 		return identity, nil
@@ -44,10 +46,10 @@ func (r *IdentityRegistry) GetIdentity(ctx kapi.Context, name string) (*api.Iden
 	if err, ok := r.GetErr[name]; ok {
 		return nil, err
 	}
-	return nil, kerrs.NewNotFound(api.Resource("identity"), name)
+	return nil, kerrs.NewNotFound(userapi.Resource("identity"), name)
 }
 
-func (r *IdentityRegistry) CreateIdentity(ctx kapi.Context, u *api.Identity) (*api.Identity, error) {
+func (r *IdentityRegistry) CreateIdentity(ctx apirequest.Context, u *userapi.Identity) (*userapi.Identity, error) {
 	*r.Actions = append(*r.Actions, Action{"CreateIdentity", u})
 	if r.Create == nil && r.CreateErr == nil {
 		return u, nil
@@ -55,7 +57,7 @@ func (r *IdentityRegistry) CreateIdentity(ctx kapi.Context, u *api.Identity) (*a
 	return r.Create, r.CreateErr
 }
 
-func (r *IdentityRegistry) UpdateIdentity(ctx kapi.Context, u *api.Identity) (*api.Identity, error) {
+func (r *IdentityRegistry) UpdateIdentity(ctx apirequest.Context, u *userapi.Identity) (*userapi.Identity, error) {
 	*r.Actions = append(*r.Actions, Action{"UpdateIdentity", u})
 	if r.Update == nil && r.UpdateErr == nil {
 		return u, nil
@@ -63,10 +65,10 @@ func (r *IdentityRegistry) UpdateIdentity(ctx kapi.Context, u *api.Identity) (*a
 	return r.Update, r.UpdateErr
 }
 
-func (r *IdentityRegistry) ListIdentities(ctx kapi.Context, options *kapi.ListOptions) (*api.IdentityList, error) {
+func (r *IdentityRegistry) ListIdentities(ctx apirequest.Context, options *metainternal.ListOptions) (*userapi.IdentityList, error) {
 	*r.Actions = append(*r.Actions, Action{"ListIdentities", options})
 	if r.List == nil && r.ListErr == nil {
-		return &api.IdentityList{}, nil
+		return &userapi.IdentityList{}, nil
 	}
 	return r.List, r.ListErr
 }

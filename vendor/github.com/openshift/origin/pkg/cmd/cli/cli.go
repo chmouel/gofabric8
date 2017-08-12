@@ -17,7 +17,6 @@ import (
 	"github.com/openshift/origin/pkg/cmd/admin"
 	"github.com/openshift/origin/pkg/cmd/cli/cmd"
 	"github.com/openshift/origin/pkg/cmd/cli/cmd/cluster"
-	"github.com/openshift/origin/pkg/cmd/cli/cmd/dockerbuild"
 	"github.com/openshift/origin/pkg/cmd/cli/cmd/importer"
 	"github.com/openshift/origin/pkg/cmd/cli/cmd/login"
 	"github.com/openshift/origin/pkg/cmd/cli/cmd/observe"
@@ -154,7 +153,7 @@ func NewCommandCLI(name, fullName string, in io.Reader, out, errout io.Writer) *
 				admin.NewCommandAdmin("adm", fullName+" "+"adm", in, out, errout),
 				cmd.NewCmdCreate(fullName, f, out, errout),
 				cmd.NewCmdReplace(fullName, f, out),
-				cmd.NewCmdApply(fullName, f, out),
+				cmd.NewCmdApply(fullName, f, out, errout),
 				cmd.NewCmdPatch(fullName, f, out),
 				cmd.NewCmdProcess(fullName, f, in, out, errout),
 				cmd.NewCmdExport(fullName, f, in, out),
@@ -162,6 +161,7 @@ func NewCommandCLI(name, fullName string, in io.Reader, out, errout io.Writer) *
 				cmd.NewCmdIdle(fullName, f, out, errout),
 				observe.NewCmdObserve(fullName, f, out, errout),
 				policy.NewCmdPolicy(policy.PolicyRecommendedName, fullName+" "+policy.PolicyRecommendedName, f, out, errout),
+				cmd.NewCmdAuth(fullName, f, out, errout),
 				cmd.NewCmdConvert(fullName, f, out),
 				importer.NewCmdImport(fullName, f, in, out, errout),
 			},
@@ -196,9 +196,7 @@ func NewCommandCLI(name, fullName string, in io.Reader, out, errout io.Writer) *
 	experimental := &cobra.Command{
 		Use: "ex", // Because this command exposes no description, it will not be shown in help
 	}
-	experimental.AddCommand(
-		dockerbuild.NewCmdDockerbuild(fullName, f, out, errout),
-	)
+	experimental.AddCommand()
 	cmds.AddCommand(experimental)
 
 	if name == fullName {
@@ -292,7 +290,7 @@ func CommandFor(basename string) *cobra.Command {
 	case "kubectl":
 		cmd = NewCmdKubectl(basename, out)
 	default:
-		cmd = NewCommandCLI(basename, basename, in, out, errout)
+		cmd = NewCommandCLI("oc", "oc", in, out, errout)
 	}
 
 	if cmd.UsageFunc() == nil {

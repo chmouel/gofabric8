@@ -6,14 +6,17 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/kubernetes/pkg/admission"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apiserver/pkg/admission"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/resource"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/util/validation"
+	"k8s.io/kubernetes/pkg/api/v1"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
-	_ "github.com/openshift/origin/pkg/build/api/install"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	_ "github.com/openshift/origin/pkg/build/apis/build/install"
+	"github.com/openshift/origin/pkg/build/util"
 )
 
 type FakeAdmissionControl struct {
@@ -44,7 +47,7 @@ var nodeSelector = map[string]string{"node": "mynode"}
 func testSTICreateBuildPod(t *testing.T, rootAllowed bool) {
 	strategy := &SourceBuildStrategy{
 		Image:            "sti-test-image",
-		Codec:            kapi.Codecs.LegacyCodec(buildapi.SchemeGroupVersion),
+		Codec:            kapi.Codecs.LegacyCodec(buildapi.LegacySchemeGroupVersion),
 		AdmissionControl: &FakeAdmissionControl{admit: rootAllowed},
 	}
 
@@ -71,10 +74,10 @@ func testSTICreateBuildPod(t *testing.T, rootAllowed bool) {
 	if container.Image != strategy.Image {
 		t.Errorf("Expected %s image, got %s!", container.Image, strategy.Image)
 	}
-	if container.ImagePullPolicy != kapi.PullIfNotPresent {
-		t.Errorf("Expected %v, got %v", kapi.PullIfNotPresent, container.ImagePullPolicy)
+	if container.ImagePullPolicy != v1.PullIfNotPresent {
+		t.Errorf("Expected %v, got %v", v1.PullIfNotPresent, container.ImagePullPolicy)
 	}
-	if actual.Spec.RestartPolicy != kapi.RestartPolicyNever {
+	if actual.Spec.RestartPolicy != v1.RestartPolicyNever {
 		t.Errorf("Expected never, got %#v", actual.Spec.RestartPolicy)
 	}
 
@@ -105,7 +108,7 @@ func testSTICreateBuildPod(t *testing.T, rootAllowed bool) {
 	if *actual.Spec.ActiveDeadlineSeconds != 60 {
 		t.Errorf("Expected ActiveDeadlineSeconds 60, got %d", *actual.Spec.ActiveDeadlineSeconds)
 	}
-	if !kapi.Semantic.DeepEqual(container.Resources, build.Spec.Resources) {
+	if !kapi.Semantic.DeepEqual(container.Resources, util.CopyApiResourcesToV1Resources(&build.Spec.Resources)) {
 		t.Fatalf("Expected actual=expected, %v != %v", container.Resources, build.Spec.Resources)
 	}
 	found := false
@@ -144,7 +147,7 @@ func testSTICreateBuildPod(t *testing.T, rootAllowed bool) {
 	if !foundDropCaps && !rootAllowed {
 		t.Fatalf("Expected %s when root is not allowed", buildapi.DropCapabilities)
 	}
-	buildJSON, _ := runtime.Encode(kapi.Codecs.LegacyCodec(buildapi.SchemeGroupVersion), build)
+	buildJSON, _ := runtime.Encode(kapi.Codecs.LegacyCodec(buildapi.LegacySchemeGroupVersion), build)
 	errorCases := map[int][]string{
 		0: {"BUILD", string(buildJSON)},
 	}
@@ -158,7 +161,7 @@ func testSTICreateBuildPod(t *testing.T, rootAllowed bool) {
 func TestS2IBuildLongName(t *testing.T) {
 	strategy := &SourceBuildStrategy{
 		Image:            "sti-test-image",
-		Codec:            kapi.Codecs.LegacyCodec(buildapi.SchemeGroupVersion),
+		Codec:            kapi.Codecs.LegacyCodec(buildapi.LegacySchemeGroupVersion),
 		AdmissionControl: &FakeAdmissionControl{admit: true},
 	}
 	build := mockSTIBuild()
@@ -175,7 +178,7 @@ func TestS2IBuildLongName(t *testing.T) {
 func mockSTIBuild() *buildapi.Build {
 	timeout := int64(60)
 	return &buildapi.Build{
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: "stiBuild",
 			Labels: map[string]string{
 				"name": "stiBuild",

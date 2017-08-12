@@ -4,12 +4,15 @@ import (
 	"errors"
 	"fmt"
 
-	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/watch"
+	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/watch"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
+	authorizationlister "github.com/openshift/origin/pkg/authorization/generated/listers/authorization/internalversion"
 	policyregistry "github.com/openshift/origin/pkg/authorization/registry/policy"
-	"github.com/openshift/origin/pkg/client"
 )
 
 type PolicyRegistry struct {
@@ -28,7 +31,11 @@ func NewPolicyRegistry(policies []authorizationapi.Policy, err error) *PolicyReg
 	return &PolicyRegistry{policyMap, err}
 }
 
-func (r *PolicyRegistry) Policies(namespace string) client.PolicyLister {
+func (r *PolicyRegistry) List(_ labels.Selector) ([]*authorizationapi.Policy, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (r *PolicyRegistry) Policies(namespace string) authorizationlister.PolicyNamespaceLister {
 	return policyLister{registry: r, namespace: namespace}
 }
 
@@ -37,24 +44,32 @@ type policyLister struct {
 	namespace string
 }
 
-func (s policyLister) List(options kapi.ListOptions) (*authorizationapi.PolicyList, error) {
-	return s.registry.ListPolicies(kapi.WithNamespace(kapi.NewContext(), s.namespace), &options)
+func (s policyLister) List(label labels.Selector) ([]*authorizationapi.Policy, error) {
+	list, err := s.registry.ListPolicies(apirequest.WithNamespace(apirequest.NewContext(), s.namespace), &metainternal.ListOptions{LabelSelector: label})
+	if err != nil {
+		return nil, err
+	}
+	var items []*authorizationapi.Policy
+	for i := range list.Items {
+		items = append(items, &list.Items[i])
+	}
+	return items, nil
 }
 
 func (s policyLister) Get(name string) (*authorizationapi.Policy, error) {
-	return s.registry.GetPolicy(kapi.WithNamespace(kapi.NewContext(), s.namespace), name)
+	return s.registry.GetPolicy(apirequest.WithNamespace(apirequest.NewContext(), s.namespace), name, &metav1.GetOptions{})
 }
 
 // ListPolicies obtains a list of policies that match a selector.
-func (r *PolicyRegistry) ListPolicies(ctx kapi.Context, options *kapi.ListOptions) (*authorizationapi.PolicyList, error) {
+func (r *PolicyRegistry) ListPolicies(ctx apirequest.Context, options *metainternal.ListOptions) (*authorizationapi.PolicyList, error) {
 	if r.Err != nil {
 		return nil, r.Err
 	}
 
-	namespace := kapi.NamespaceValue(ctx)
+	namespace := apirequest.NamespaceValue(ctx)
 	list := make([]authorizationapi.Policy, 0)
 
-	if namespace == kapi.NamespaceAll {
+	if namespace == metav1.NamespaceAll {
 		for _, curr := range r.policies {
 			for _, policy := range curr {
 				list = append(list, policy)
@@ -76,12 +91,12 @@ func (r *PolicyRegistry) ListPolicies(ctx kapi.Context, options *kapi.ListOption
 }
 
 // GetPolicy retrieves a specific policy.
-func (r *PolicyRegistry) GetPolicy(ctx kapi.Context, id string) (*authorizationapi.Policy, error) {
+func (r *PolicyRegistry) GetPolicy(ctx apirequest.Context, id string, options *metav1.GetOptions) (*authorizationapi.Policy, error) {
 	if r.Err != nil {
 		return nil, r.Err
 	}
 
-	namespace := kapi.NamespaceValue(ctx)
+	namespace := apirequest.NamespaceValue(ctx)
 	if len(namespace) == 0 {
 		return nil, errors.New("invalid request.  Namespace parameter required.")
 	}
@@ -96,16 +111,16 @@ func (r *PolicyRegistry) GetPolicy(ctx kapi.Context, id string) (*authorizationa
 }
 
 // CreatePolicy creates a new policy.
-func (r *PolicyRegistry) CreatePolicy(ctx kapi.Context, policy *authorizationapi.Policy) error {
+func (r *PolicyRegistry) CreatePolicy(ctx apirequest.Context, policy *authorizationapi.Policy) error {
 	if r.Err != nil {
 		return r.Err
 	}
 
-	namespace := kapi.NamespaceValue(ctx)
+	namespace := apirequest.NamespaceValue(ctx)
 	if len(namespace) == 0 {
 		return errors.New("invalid request.  Namespace parameter required.")
 	}
-	if existing, _ := r.GetPolicy(ctx, policy.Name); existing != nil {
+	if existing, _ := r.GetPolicy(ctx, policy.Name, &metav1.GetOptions{}); existing != nil {
 		return fmt.Errorf("Policy %v::%v already exists", namespace, policy.Name)
 	}
 
@@ -115,16 +130,16 @@ func (r *PolicyRegistry) CreatePolicy(ctx kapi.Context, policy *authorizationapi
 }
 
 // UpdatePolicy updates a policy.
-func (r *PolicyRegistry) UpdatePolicy(ctx kapi.Context, policy *authorizationapi.Policy) error {
+func (r *PolicyRegistry) UpdatePolicy(ctx apirequest.Context, policy *authorizationapi.Policy) error {
 	if r.Err != nil {
 		return r.Err
 	}
 
-	namespace := kapi.NamespaceValue(ctx)
+	namespace := apirequest.NamespaceValue(ctx)
 	if len(namespace) == 0 {
 		return errors.New("invalid request.  Namespace parameter required.")
 	}
-	if existing, _ := r.GetPolicy(ctx, policy.Name); existing == nil {
+	if existing, _ := r.GetPolicy(ctx, policy.Name, &metav1.GetOptions{}); existing == nil {
 		return fmt.Errorf("Policy %v::%v not found", namespace, policy.Name)
 	}
 
@@ -134,12 +149,12 @@ func (r *PolicyRegistry) UpdatePolicy(ctx kapi.Context, policy *authorizationapi
 }
 
 // DeletePolicy deletes a policy.
-func (r *PolicyRegistry) DeletePolicy(ctx kapi.Context, id string) error {
+func (r *PolicyRegistry) DeletePolicy(ctx apirequest.Context, id string) error {
 	if r.Err != nil {
 		return r.Err
 	}
 
-	namespace := kapi.NamespaceValue(ctx)
+	namespace := apirequest.NamespaceValue(ctx)
 	if len(namespace) == 0 {
 		return errors.New("invalid request.  Namespace parameter required.")
 	}
@@ -152,7 +167,7 @@ func (r *PolicyRegistry) DeletePolicy(ctx kapi.Context, id string) error {
 	return nil
 }
 
-func (r *PolicyRegistry) WatchPolicies(ctx kapi.Context, options *kapi.ListOptions) (watch.Interface, error) {
+func (r *PolicyRegistry) WatchPolicies(ctx apirequest.Context, options *metainternal.ListOptions) (watch.Interface, error) {
 	return nil, errors.New("unsupported action for test registry")
 }
 

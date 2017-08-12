@@ -28,7 +28,7 @@ import (
 	"github.com/fabric8io/gofabric8/util"
 	oclient "github.com/openshift/origin/pkg/client"
 	"github.com/spf13/cobra"
-	kapi "k8s.io/kubernetes/pkg/api"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
@@ -130,7 +130,7 @@ func upgradePackages(ns string, c *clientset.Clientset, ocl *oclient.Client, arg
 	if err != nil {
 		return err
 	}
-	list, err := c.ConfigMaps(ns).List(kapi.ListOptions{
+	list, err := c.ConfigMaps(ns).List(apim.ListOptions{
 		LabelSelector: *selector,
 	})
 	if err != nil {

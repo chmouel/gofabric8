@@ -3,27 +3,25 @@ package plugin
 import (
 	"fmt"
 	"net"
-	"sort"
 	"strconv"
-	"strings"
 
 	log "github.com/golang/glog"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	utilwait "k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/tools/cache"
 	kapi "k8s.io/kubernetes/pkg/api"
-	kapiunversioned "k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/client/cache"
 	"k8s.io/kubernetes/pkg/client/retry"
-	"k8s.io/kubernetes/pkg/types"
-	utilruntime "k8s.io/kubernetes/pkg/util/runtime"
-	utilwait "k8s.io/kubernetes/pkg/util/wait"
 
-	osapi "github.com/openshift/origin/pkg/sdn/api"
+	osapi "github.com/openshift/origin/pkg/sdn/apis/network"
 	"github.com/openshift/origin/pkg/util/netutils"
 )
 
 func (master *OsdnMaster) SubnetStartMaster(clusterNetwork *net.IPNet, hostSubnetLength uint32) error {
 	subrange := make([]string, 0)
-	subnets, err := master.osClient.HostSubnets().List(kapi.ListOptions{})
+	subnets, err := master.osClient.HostSubnets().List(metav1.ListOptions{})
 	if err != nil {
 		log.Errorf("Error in initializing/fetching subnets: %v", err)
 		return err
@@ -43,43 +41,48 @@ func (master *OsdnMaster) SubnetStartMaster(clusterNetwork *net.IPNet, hostSubne
 		return err
 	}
 
-	go utilwait.Forever(master.watchNodes, 0)
+	master.watchNodes()
 	go utilwait.Forever(master.watchSubnets, 0)
 	return nil
 }
 
-func (master *OsdnMaster) addNode(nodeName string, nodeIP string, hsAnnotations map[string]string) error {
+// addNode takes the nodeName, a preferred nodeIP, the node's annotations and other valid ip addresses
+// Creates or updates a HostSubnet if needed
+// Returns the IP address used for hostsubnet (either the preferred or one from the otherValidAddresses) and any error
+func (master *OsdnMaster) addNode(nodeName string, nodeIP string, hsAnnotations map[string]string, otherValidAddresses []kapi.NodeAddress) (string, error) {
 	// Validate node IP before proceeding
 	if err := master.networkInfo.validateNodeIP(nodeIP); err != nil {
-		return err
+		return "", err
 	}
 
 	// Check if subnet needs to be created or updated
-	sub, err := master.osClient.HostSubnets().Get(nodeName)
+	sub, err := master.osClient.HostSubnets().Get(nodeName, metav1.GetOptions{})
 	if err == nil {
 		if sub.HostIP == nodeIP {
-			return nil
+			return nodeIP, nil
+		} else if isValidNodeIP(otherValidAddresses, sub.HostIP) {
+			return sub.HostIP, nil
 		} else {
 			// Node IP changed, update old subnet
 			sub.HostIP = nodeIP
 			sub, err = master.osClient.HostSubnets().Update(sub)
 			if err != nil {
-				return fmt.Errorf("Error updating subnet %s for node %s: %v", sub.Subnet, nodeName, err)
+				return "", fmt.Errorf("error updating subnet %s for node %s: %v", sub.Subnet, nodeName, err)
 			}
 			log.Infof("Updated HostSubnet %s", hostSubnetToString(sub))
-			return nil
+			return nodeIP, nil
 		}
 	}
 
 	// Create new subnet
 	sn, err := master.subnetAllocator.GetNetwork()
 	if err != nil {
-		return fmt.Errorf("Error allocating network for node %s: %v", nodeName, err)
+		return "", fmt.Errorf("error allocating network for node %s: %v", nodeName, err)
 	}
 
 	sub = &osapi.HostSubnet{
-		TypeMeta:   kapiunversioned.TypeMeta{Kind: "HostSubnet"},
-		ObjectMeta: kapi.ObjectMeta{Name: nodeName, Annotations: hsAnnotations},
+		TypeMeta:   metav1.TypeMeta{Kind: "HostSubnet"},
+		ObjectMeta: metav1.ObjectMeta{Name: nodeName, Annotations: hsAnnotations},
 		Host:       nodeName,
 		HostIP:     nodeIP,
 		Subnet:     sn.String(),
@@ -87,28 +90,28 @@ func (master *OsdnMaster) addNode(nodeName string, nodeIP string, hsAnnotations 
 	sub, err = master.osClient.HostSubnets().Create(sub)
 	if err != nil {
 		master.subnetAllocator.ReleaseNetwork(sn)
-		return fmt.Errorf("Error creating subnet %s for node %s: %v", sn.String(), nodeName, err)
+		return "", fmt.Errorf("error creating subnet %s for node %s: %v", sn.String(), nodeName, err)
 	}
 	log.Infof("Created HostSubnet %s", hostSubnetToString(sub))
-	return nil
+	return nodeIP, nil
 }
 
 func (master *OsdnMaster) deleteNode(nodeName string) error {
-	sub, err := master.osClient.HostSubnets().Get(nodeName)
+	sub, err := master.osClient.HostSubnets().Get(nodeName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("Error fetching subnet for node %q for deletion: %v", nodeName, err)
+		return fmt.Errorf("error fetching subnet for node %q for deletion: %v", nodeName, err)
 	}
 	err = master.osClient.HostSubnets().Delete(nodeName)
 	if err != nil {
-		return fmt.Errorf("Error deleting subnet %v for node %q: %v", sub, nodeName, err)
+		return fmt.Errorf("error deleting subnet %v for node %q: %v", sub, nodeName, err)
 	}
 
 	log.Infof("Deleted HostSubnet %s", hostSubnetToString(sub))
 	return nil
 }
 
-func isValidNodeIP(node *kapi.Node, nodeIP string) bool {
-	for _, addr := range node.Status.Addresses {
+func isValidNodeIP(validAddresses []kapi.NodeAddress, nodeIP string) bool {
+	for _, addr := range validAddresses {
 		if addr.Address == nodeIP {
 			return true
 		}
@@ -137,7 +140,7 @@ func (master *OsdnMaster) clearInitialNodeNetworkUnavailableCondition(node *kapi
 		var err error
 
 		if knode != node {
-			knode, err = master.kClient.Nodes().Get(node.ObjectMeta.Name)
+			knode, err = master.kClient.Core().Nodes().Get(node.ObjectMeta.Name, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}
@@ -149,8 +152,8 @@ func (master *OsdnMaster) clearInitialNodeNetworkUnavailableCondition(node *kapi
 			condition.Status = kapi.ConditionFalse
 			condition.Reason = "RouteCreated"
 			condition.Message = "openshift-sdn cleared kubelet-set NoRouteCreated"
-			condition.LastTransitionTime = kapiunversioned.Now()
-			knode, err = master.kClient.Nodes().UpdateStatus(knode)
+			condition.LastTransitionTime = metav1.Now()
+			knode, err = master.kClient.Core().Nodes().UpdateStatus(knode)
 			if err == nil {
 				cleared = true
 			}
@@ -158,50 +161,49 @@ func (master *OsdnMaster) clearInitialNodeNetworkUnavailableCondition(node *kapi
 		return err
 	})
 	if resultErr != nil {
-		utilruntime.HandleError(fmt.Errorf("Status update failed for local node: %v", resultErr))
+		utilruntime.HandleError(fmt.Errorf("status update failed for local node: %v", resultErr))
 	} else if cleared {
 		log.Infof("Cleared node NetworkUnavailable/NoRouteCreated condition for %s", node.ObjectMeta.Name)
 	}
 }
 
 func (master *OsdnMaster) watchNodes() {
-	nodeAddressMap := map[types.UID]string{}
-	RunEventQueue(master.kClient.CoreClient.RESTClient(), Nodes, func(delta cache.Delta) error {
-		node := delta.Object.(*kapi.Node)
-		name := node.ObjectMeta.Name
-		uid := node.ObjectMeta.UID
+	RegisterSharedInformerEventHandlers(master.informers,
+		master.handleAddOrUpdateNode, master.handleDeleteNode, Nodes)
+}
 
-		nodeIP, err := getNodeIP(node)
-		if err != nil {
-			return fmt.Errorf("failed to get node IP for %s, skipping event: %v, node: %v", name, delta.Type, node)
-		}
+func (master *OsdnMaster) handleAddOrUpdateNode(obj, _ interface{}, eventType watch.EventType) {
+	node := obj.(*kapi.Node)
+	nodeIP, err := getNodeIP(node)
+	if err != nil {
+		log.Errorf("Failed to get node IP for node %s, skipping %s event, node: %v", node.Name, eventType, node)
+		return
+	}
+	master.clearInitialNodeNetworkUnavailableCondition(node)
 
-		switch delta.Type {
-		case cache.Sync, cache.Added, cache.Updated:
-			master.clearInitialNodeNetworkUnavailableCondition(node)
+	if oldNodeIP, ok := master.hostSubnetNodeIPs[node.UID]; ok && ((nodeIP == oldNodeIP) || isValidNodeIP(node.Status.Addresses, oldNodeIP)) {
+		return
+	}
+	// Node status is frequently updated by kubelet, so log only if the above condition is not met
+	log.V(5).Infof("Watch %s event for Node %q", eventType, node.Name)
 
-			if oldNodeIP, ok := nodeAddressMap[uid]; ok && ((nodeIP == oldNodeIP) || isValidNodeIP(node, oldNodeIP)) {
-				break
-			}
-			// Node status is frequently updated by kubelet, so log only if the above condition is not met
-			log.V(5).Infof("Watch %s event for Node %q", delta.Type, name)
+	usedNodeIP, err := master.addNode(node.Name, nodeIP, nil, node.Status.Addresses)
+	if err != nil {
+		log.Errorf("Error creating subnet for node %s, ip %s: %v", node.Name, nodeIP, err)
+		return
+	}
+	master.hostSubnetNodeIPs[node.UID] = usedNodeIP
+}
 
-			err = master.addNode(name, nodeIP, nil)
-			if err != nil {
-				return fmt.Errorf("error creating subnet for node %s, ip %s: %v", name, nodeIP, err)
-			}
-			nodeAddressMap[uid] = nodeIP
-		case cache.Deleted:
-			log.V(5).Infof("Watch %s event for Node %q", delta.Type, name)
-			delete(nodeAddressMap, uid)
+func (master *OsdnMaster) handleDeleteNode(obj interface{}) {
+	node := obj.(*kapi.Node)
+	log.V(5).Infof("Watch %s event for Node %q", watch.Deleted, node.Name)
+	delete(master.hostSubnetNodeIPs, node.UID)
 
-			err = master.deleteNode(name)
-			if err != nil {
-				return fmt.Errorf("Error deleting node %s: %v", name, err)
-			}
-		}
-		return nil
-	})
+	if err := master.deleteNode(node.Name); err != nil {
+		log.Errorf("Error deleting node %s: %v", node.Name, err)
+		return
+	}
 }
 
 func (node *OsdnNode) SubnetStartNode() error {
@@ -242,7 +244,7 @@ func (master *OsdnMaster) watchSubnets() {
 						log.Errorf("Vnid %s is an invalid value for annotation %s. Annotation will be ignored.", vnid, osapi.FixedVNIDHostAnnotation)
 					}
 				}
-				err = master.addNode(name, hostIP, hsAnnotations)
+				_, err = master.addNode(name, hostIP, hsAnnotations, nil)
 				if err != nil {
 					log.Errorf("Error creating subnet for node %s, ip %s: %v", name, hostIP, err)
 					return nil
@@ -253,7 +255,7 @@ func (master *OsdnMaster) watchSubnets() {
 				// release the subnet
 				_, ipnet, err := net.ParseCIDR(subnet)
 				if err != nil {
-					return fmt.Errorf("Error parsing subnet %q for node %q for deletion: %v", subnet, name, err)
+					return fmt.Errorf("error parsing subnet %q for node %q for deletion: %v", subnet, name, err)
 				}
 				master.subnetAllocator.ReleaseNetwork(ipnet)
 			}
@@ -265,19 +267,13 @@ func (master *OsdnMaster) watchSubnets() {
 type hostSubnetMap map[string]*osapi.HostSubnet
 
 func (plugin *OsdnNode) updateVXLANMulticastRules(subnets hostSubnetMap) {
-	otx := plugin.ovs.NewTransaction()
-
-	// Build the list of all nodes for multicast forwarding
-	tun_dsts := make([]string, 0, len(subnets))
+	remoteIPs := make([]string, 0, len(subnets)-1)
 	for _, subnet := range subnets {
 		if subnet.HostIP != plugin.localIP {
-			tun_dsts = append(tun_dsts, fmt.Sprintf(",set_field:%s->tun_dst,output:1", subnet.HostIP))
+			remoteIPs = append(remoteIPs, subnet.HostIP)
 		}
 	}
-	sort.Strings(sort.StringSlice(tun_dsts))
-	otx.AddFlow("table=111, priority=100, actions=move:NXM_NX_REG0[]->NXM_NX_TUN_ID[0..31]%s,goto_table:120", strings.Join(tun_dsts, ""))
-
-	if err := otx.EndTransaction(); err != nil {
+	if err := plugin.oc.UpdateVXLANMulticastFlows(remoteIPs); err != nil {
 		log.Errorf("Error updating OVS VXLAN multicast flows: %v", err)
 	}
 }

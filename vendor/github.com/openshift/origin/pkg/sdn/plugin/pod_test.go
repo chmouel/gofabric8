@@ -12,15 +12,8 @@ import (
 
 	"github.com/openshift/origin/pkg/sdn/plugin/cniserver"
 
-	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-
-	kapi "k8s.io/kubernetes/pkg/api"
-	kunversioned "k8s.io/kubernetes/pkg/api/unversioned"
-	kcontainer "k8s.io/kubernetes/pkg/kubelet/container"
-	kcontainertest "k8s.io/kubernetes/pkg/kubelet/container/testing"
-	"k8s.io/kubernetes/pkg/kubelet/network"
+	utiltesting "k8s.io/client-go/util/testing"
 	khostport "k8s.io/kubernetes/pkg/kubelet/network/hostport"
-	utiltesting "k8s.io/kubernetes/pkg/util/testing"
 
 	cnitypes "github.com/containernetworking/cni/pkg/types"
 )
@@ -100,28 +93,13 @@ func (pt *podTester) addExpectedPod(t *testing.T, op *operation) {
 }
 
 func fakeRunningPod(namespace, name string, ip net.IP) *runningPod {
-	activePod := &khostport.ActivePod{
-		Pod: &kapi.Pod{
-			TypeMeta: kunversioned.TypeMeta{
-				Kind: "Pod",
-			},
-			ObjectMeta: kapi.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-			Spec: kapi.PodSpec{
-				Containers: []kapi.Container{
-					{
-						Name:  "foobareasadfa",
-						Image: "awesome-image",
-					},
-				},
-			},
-		},
-		IP: ip,
+	podPortMapping := &khostport.PodPortMapping{
+		Namespace: namespace,
+		Name:      name,
+		IP:        ip,
 	}
 
-	return &runningPod{activePod: activePod, vnid: 0}
+	return &runningPod{podPortMapping: podPortMapping, vnid: 0}
 }
 
 func (pt *podTester) setup(req *cniserver.PodRequest) (*cnitypes.Result, *runningPod, error) {
@@ -161,40 +139,6 @@ func (pt *podTester) teardown(req *cniserver.PodRequest) error {
 		pod.deleted = true
 	}
 	return err
-}
-
-type fakeHost struct {
-	runtime kcontainer.Runtime
-}
-
-var _ network.Host = &fakeHost{}
-
-func newFakeHost() *fakeHost {
-	return &fakeHost{
-		runtime: &kcontainertest.FakeRuntime{
-			AllPodList: []*kcontainertest.FakePod{},
-		},
-	}
-}
-
-func (fnh *fakeHost) GetPodByName(name, namespace string) (*kapi.Pod, bool) {
-	return nil, false
-}
-
-func (fnh *fakeHost) GetKubeClient() clientset.Interface {
-	return nil
-}
-
-func (fnh *fakeHost) GetRuntime() kcontainer.Runtime {
-	return fnh.runtime
-}
-
-func (fnh *fakeHost) GetNetNS(containerID string) (string, error) {
-	return "", nil
-}
-
-func (fnh *fakeHost) SupportsLegacyFeatures() bool {
-	return false
 }
 
 type podcheck struct {
@@ -371,7 +315,7 @@ func TestPodManager(t *testing.T) {
 		podManager := newDefaultPodManager()
 		podManager.podHandler = podTester
 		_, net, _ := net.ParseCIDR("1.2.0.0/16")
-		podManager.Start(socketPath, newFakeHost(), "1.2.3.0/24", net)
+		podManager.Start(socketPath, "1.2.3.0/24", net)
 
 		// Add pods to our expected pod list before kicking off the
 		// actual pod setup to ensure we don't concurrently access
@@ -385,7 +329,7 @@ func TestPodManager(t *testing.T) {
 				Command:      op.command,
 				PodNamespace: op.namespace,
 				PodName:      op.name,
-				ContainerId:  "asd;lfkajsdflkajfs",
+				SandboxID:    "asd;lfkajsdflkajfs",
 				Netns:        "/some/network/namespace",
 				Result:       make(chan *cniserver.PodResult),
 			}
@@ -467,7 +411,7 @@ func TestDirectPodUpdate(t *testing.T) {
 	podManager := newDefaultPodManager()
 	podManager.podHandler = podTester
 	_, net, _ := net.ParseCIDR("1.2.0.0/16")
-	podManager.Start(socketPath, newFakeHost(), "1.2.3.0/24", net)
+	podManager.Start(socketPath, "1.2.3.0/24", net)
 
 	op := &operation{
 		command:   cniserver.CNI_UPDATE,
@@ -480,58 +424,12 @@ func TestDirectPodUpdate(t *testing.T) {
 		Command:      op.command,
 		PodNamespace: op.namespace,
 		PodName:      op.name,
-		ContainerId:  "asdfasdfasdfaf",
+		SandboxID:    "asdfasdfasdfaf",
 		Result:       make(chan *cniserver.PodResult),
 	}
 
 	// Send request and wait for the result
 	if _, err = podManager.handleCNIRequest(req); err != nil {
 		t.Fatalf("failed to update pod: %v", err)
-	}
-}
-
-func TestUpdateMulticastFlows(t *testing.T) {
-	pods := map[string]*runningPod{
-		"blah": {
-			vnid:   5,
-			ofport: 2,
-		},
-		"baz": {
-			vnid:   5,
-			ofport: 8,
-		},
-		"foobar": {
-			vnid:   5,
-			ofport: 7,
-		},
-		"blah2": {
-			vnid:   6,
-			ofport: 3,
-		},
-		"baz2": {
-			vnid:   6,
-			ofport: 9,
-		},
-		"bork": {
-			vnid:   8,
-			ofport: 10,
-		},
-	}
-
-	outputs := localMulticastOutputs(pods, 0)
-	if outputs != "" {
-		t.Fatalf("Unexpected outputs for vnid 0: %s", outputs)
-	}
-	outputs = localMulticastOutputs(pods, 5)
-	if outputs != "output:2,output:7,output:8" {
-		t.Fatalf("Unexpected outputs for vnid 5: %s", outputs)
-	}
-	outputs = localMulticastOutputs(pods, 6)
-	if outputs != "output:3,output:9" {
-		t.Fatalf("Unexpected outputs for vnid 6: %s", outputs)
-	}
-	outputs = localMulticastOutputs(pods, 8)
-	if outputs != "output:10" {
-		t.Fatalf("Unexpected outputs for vnid 0: %s", outputs)
 	}
 }

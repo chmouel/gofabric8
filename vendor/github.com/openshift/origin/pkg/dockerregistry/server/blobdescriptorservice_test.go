@@ -22,14 +22,12 @@ import (
 	"github.com/docker/distribution/registry/middleware/registry"
 	"github.com/docker/distribution/registry/storage"
 
+	srvconfig "github.com/openshift/origin/pkg/dockerregistry/server/configuration"
 	registrytest "github.com/openshift/origin/pkg/dockerregistry/testutil"
-	kclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
-	"k8s.io/kubernetes/pkg/client/restclient"
+	restclient "k8s.io/client-go/rest"
+	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 
 	osclient "github.com/openshift/origin/pkg/client"
-	"github.com/openshift/origin/pkg/client/testclient"
-	imagetest "github.com/openshift/origin/pkg/image/admission/testutil"
 )
 
 const testPassthroughToUpstream = "openshift.test.passthrough-to-upstream"
@@ -53,24 +51,13 @@ func TestBlobDescriptorServiceIsApplied(t *testing.T) {
 	// to make other unit tests working
 	defer m.changeUnsetRepository(false)
 
-	testImage, err := registrytest.NewImageForManifest("user/app", registrytest.SampleImageManifestSchema1, "", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	testImageStream := registrytest.TestNewImageStreamObject("user", "app", "latest", testImage.Name, "")
-	client := &testclient.Fake{}
-	client.AddReactor("get", "imagestreams", imagetest.GetFakeImageStreamGetHandler(t, *testImageStream))
-	client.AddReactor("get", "images", registrytest.GetFakeImageGetHandler(t, *testImage))
+	fos, client := registrytest.NewFakeOpenShiftWithClient()
+	testImage := registrytest.AddRandomImage(t, fos, "user", "app", "latest")
 
-	// TODO: get rid of those nasty global vars
-	backupRegistryClient := DefaultRegistryClient
-	DefaultRegistryClient = makeFakeRegistryClient(client, fake.NewSimpleClientset())
-	defer func() {
-		// set it back once this test finishes to make other unit tests working
-		DefaultRegistryClient = backupRegistryClient
-	}()
-
-	app := handlers.NewApp(context.Background(), &configuration.Configuration{
+	ctx := context.Background()
+	ctx = WithConfiguration(ctx, &srvconfig.Configuration{})
+	ctx = WithRegistryClient(ctx, makeFakeRegistryClient(client, nil))
+	app := handlers.NewApp(ctx, &configuration.Configuration{
 		Loglevel: "debug",
 		Auth: map[string]configuration.Parameters{
 			fakeAuthorizerName: {"realm": fakeAuthorizerName},
@@ -102,7 +89,7 @@ func TestBlobDescriptorServiceIsApplied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error parsing server url: %v", err)
 	}
-	os.Setenv("DOCKER_REGISTRY_URL", serverURL.Host)
+	os.Setenv("OPENSHIFT_DEFAULT_REGISTRY", serverURL.Host)
 
 	desc, _, err := registrytest.UploadRandomTestBlob(serverURL, nil, "user/app")
 	if err != nil {
@@ -463,7 +450,7 @@ func (bs *testBlobDescriptorService) Stat(ctx context.Context, dgst digest.Diges
 	bs.m.methodInvoked("Stat")
 	if bs.m.getUnsetRepository() {
 		bs.t.Logf("unsetting repository from the context")
-		ctx = WithRepository(ctx, nil)
+		ctx = withRepository(ctx, nil)
 	}
 
 	return bs.BlobDescriptorService.Stat(ctx, dgst)
@@ -472,7 +459,7 @@ func (bs *testBlobDescriptorService) Clear(ctx context.Context, dgst digest.Dige
 	bs.m.methodInvoked("Clear")
 	if bs.m.getUnsetRepository() {
 		bs.t.Logf("unsetting repository from the context")
-		ctx = WithRepository(ctx, nil)
+		ctx = withRepository(ctx, nil)
 	}
 	return bs.BlobDescriptorService.Clear(ctx, dgst)
 }
@@ -499,24 +486,24 @@ func (f *fakeAccessController) Authorized(ctx context.Context, access ...registr
 		f.t.Logf("fake authorizer: authorizing access to %s:%s:%s", access.Resource.Type, access.Resource.Name, access.Action)
 	}
 
-	ctx = WithAuthPerformed(ctx)
+	ctx = withAuthPerformed(ctx)
 	return ctx, nil
 }
 
-func makeFakeRegistryClient(client osclient.Interface, kClient kclientset.Interface) RegistryClient {
+func makeFakeRegistryClient(client osclient.Interface, kCoreClient kcoreclient.CoreInterface) RegistryClient {
 	return &fakeRegistryClient{
-		client:  client,
-		kClient: kClient,
+		client:      client,
+		kCoreClient: kCoreClient,
 	}
 }
 
 type fakeRegistryClient struct {
-	client  osclient.Interface
-	kClient kclientset.Interface
+	client      osclient.Interface
+	kCoreClient kcoreclient.CoreInterface
 }
 
-func (f *fakeRegistryClient) Clients() (osclient.Interface, kclientset.Interface, error) {
-	return f.client, f.kClient, nil
+func (f *fakeRegistryClient) Clients() (osclient.Interface, kcoreclient.CoreInterface, error) {
+	return f.client, f.kCoreClient, nil
 }
 func (f *fakeRegistryClient) SafeClientConfig() restclient.Config {
 	return (&registryClient{}).SafeClientConfig()

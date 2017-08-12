@@ -7,8 +7,8 @@ import (
 	"path"
 	"strings"
 
-	"k8s.io/kubernetes/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/util/validation/field"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"github.com/openshift/origin/pkg/auth/authenticator/redirector"
 	"github.com/openshift/origin/pkg/auth/server/errorpage"
@@ -17,7 +17,7 @@ import (
 	"github.com/openshift/origin/pkg/auth/userregistry/identitymapper"
 	"github.com/openshift/origin/pkg/cmd/server/api"
 	"github.com/openshift/origin/pkg/cmd/server/api/latest"
-	"github.com/openshift/origin/pkg/user/api/validation"
+	"github.com/openshift/origin/pkg/user/apis/user/validation"
 )
 
 func ValidateOAuthConfig(config *api.OAuthConfig, fldPath *field.Path) ValidationResults {

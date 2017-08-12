@@ -8,14 +8,14 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
-	"k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/meta"
-	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/kubectl"
+	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/util/sets"
 
-	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
 )
 
@@ -37,6 +37,20 @@ type Reporter interface {
 	Changed() bool
 }
 
+// ReporterBool implements the Reporter interface for a boolean.
+type ReporterBool bool
+
+func (r ReporterBool) Changed() bool {
+	return bool(r)
+}
+
+func AlwaysRequiresMigration(_ *resource.Info) (Reporter, error) {
+	return ReporterBool(true), nil
+}
+
+// NotChanged is a Reporter returned by operations that are guaranteed to be read-only
+var NotChanged = ReporterBool(false)
+
 // ResourceOptions assists in performing migrations on any object that
 // can be retrieved via the API.
 type ResourceOptions struct {
@@ -52,7 +66,7 @@ type ResourceOptions struct {
 	ToKey         string
 
 	OverlappingResources []sets.String
-	DefaultExcludes      []unversioned.GroupResource
+	DefaultExcludes      []schema.GroupResource
 
 	Builder   *resource.Builder
 	SaveFn    MigrateActionFunc
@@ -64,6 +78,7 @@ type ResourceOptions struct {
 
 func (o *ResourceOptions) Bind(c *cobra.Command) {
 	c.Flags().StringVarP(&o.Output, "output", "o", o.Output, "Output the modified objects instead of saving them, valid values are 'yaml' or 'json'")
+	kcmdutil.AddNoHeadersFlags(c)
 	c.Flags().StringSliceVar(&o.Include, "include", o.Include, "Resource types to migrate. Passing --filename will override this flag.")
 	c.Flags().BoolVar(&o.AllNamespaces, "all-namespaces", true, "Migrate objects in all namespaces. Defaults to true.")
 	c.Flags().BoolVar(&o.Confirm, "confirm", false, "If true, all requested objects will be migrated. Defaults to false.")
@@ -79,7 +94,7 @@ func (o *ResourceOptions) Bind(c *cobra.Command) {
 func (o *ResourceOptions) Complete(f *clientcmd.Factory, c *cobra.Command) error {
 	switch {
 	case len(o.Output) > 0:
-		printer, _, err := kubectl.GetPrinter(o.Output, "", false, true)
+		printer, _, err := f.PrinterForCommand(c)
 		if err != nil {
 			return err
 		}
@@ -153,6 +168,15 @@ func (o *ResourceOptions) Complete(f *clientcmd.Factory, c *cobra.Command) error
 		}
 		exclude := sets.NewString()
 		for _, gr := range o.DefaultExcludes {
+			if len(o.OverlappingResources) > 0 {
+				for _, others := range o.OverlappingResources {
+					if !others.Has(gr.String()) {
+						continue
+					}
+					exclude.Insert(others.List()...)
+					break
+				}
+			}
 			exclude.Insert(gr.String())
 		}
 		candidate := sets.NewString()
@@ -268,8 +292,8 @@ func (o *ResourceVisitor) Visit(fn MigrateVisitFunc) error {
 	err := result.Visit(func(info *resource.Info, err error) error {
 		if err == nil && o.FilterFn != nil {
 			var ok bool
-			t.found++
 			if ok, err = o.FilterFn(info); err == nil && !ok {
+				t.found++
 				t.ignored++
 				if glog.V(2) {
 					t.report("ignored:", info, nil)
@@ -302,10 +326,10 @@ func (o *ResourceVisitor) Visit(fn MigrateVisitFunc) error {
 	switch {
 	case err != nil:
 		fmt.Fprintf(out, "error: exited without processing all resources: %v\n", err)
-		err = cmdutil.ErrExit
+		err = kcmdutil.ErrExit
 	case t.errors > 0:
 		fmt.Fprintf(out, "error: %d resources failed to migrate\n", t.errors)
-		err = cmdutil.ErrExit
+		err = kcmdutil.ErrExit
 	}
 	return err
 }
@@ -316,7 +340,7 @@ var ErrUnchanged = fmt.Errorf("migration was not necessary")
 
 // ErrRecalculate may be returned by MigrateActionFunc to indicate that the object
 // has changed and needs to have its information recalculated prior to being saved.
-// Use when a resource requries multiple API operations to persist (for instance,
+// Use when a resource requires multiple API operations to persist (for instance,
 // both status and spec must be changed).
 var ErrRecalculate = fmt.Errorf("recalculate migration")
 
@@ -373,9 +397,9 @@ func (t *migrateTracker) report(prefix string, info *resource.Info, err error) {
 		ns = "-n " + ns
 	}
 	if err != nil {
-		fmt.Fprintf(t.out, "%-10s %s/%s %s: %v\n", prefix, info.Mapping.Resource, info.Name, ns, err)
+		fmt.Fprintf(t.out, "%-10s %s %s/%s: %v\n", prefix, ns, info.Mapping.Resource, info.Name, err)
 	} else {
-		fmt.Fprintf(t.out, "%-10s %s/%s %s\n", prefix, info.Mapping.Resource, info.Name, ns)
+		fmt.Fprintf(t.out, "%-10s %s %s/%s\n", prefix, ns, info.Mapping.Resource, info.Name)
 	}
 }
 
@@ -431,7 +455,7 @@ func (t *migrateTracker) try(info *resource.Info) (attemptResult, error) {
 			}
 			if canRetry(err) {
 				if t.retries > 0 {
-					if glog.V(1) && err != ErrRecalculate {
+					if bool(glog.V(1)) && err != ErrRecalculate {
 						t.report("retry:", info, err)
 					}
 					result, err := t.try(info)
@@ -461,7 +485,8 @@ func canRetry(err error) bool {
 // All other errors are left in their natural state - they will not be retried unless
 // they define a Temporary() method that returns true.
 func DefaultRetriable(info *resource.Info, err error) error {
-	if err == nil {
+	// tolerate the deletion of resources during migration
+	if err == nil || errors.IsNotFound(err) {
 		return nil
 	}
 	switch {

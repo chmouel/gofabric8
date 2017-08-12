@@ -6,18 +6,19 @@ import (
 	"sort"
 	"strings"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	kuval "k8s.io/apimachinery/pkg/util/validation"
 	kapi "k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/validation"
 	extensions "k8s.io/kubernetes/pkg/apis/extensions"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/util/intstr"
-	kuval "k8s.io/kubernetes/pkg/util/validation"
 
-	build "github.com/openshift/origin/pkg/build/api"
-	deploy "github.com/openshift/origin/pkg/deploy/api"
+	build "github.com/openshift/origin/pkg/build/apis/build"
+	deploy "github.com/openshift/origin/pkg/deploy/apis/apps"
 	"github.com/openshift/origin/pkg/generate"
-	image "github.com/openshift/origin/pkg/image/api"
-	route "github.com/openshift/origin/pkg/route/api"
+	image "github.com/openshift/origin/pkg/image/apis/image"
+	route "github.com/openshift/origin/pkg/route/apis/route"
 	"github.com/openshift/origin/pkg/util/docker/dockerfile"
 )
 
@@ -35,19 +36,21 @@ type PipelineBuilder interface {
 // The pipelines created with a PipelineBuilder will have access to the given
 // environment. The boolean outputDocker controls whether builds will output to
 // an image stream tag or docker image reference.
-func NewPipelineBuilder(name string, environment Environment, outputDocker bool) PipelineBuilder {
+func NewPipelineBuilder(name string, environment Environment, dockerStrategyOptions *build.DockerStrategyOptions, outputDocker bool) PipelineBuilder {
 	return &pipelineBuilder{
-		nameGenerator: NewUniqueNameGenerator(name),
-		environment:   environment,
-		outputDocker:  outputDocker,
+		nameGenerator:         NewUniqueNameGenerator(name),
+		environment:           environment,
+		outputDocker:          outputDocker,
+		dockerStrategyOptions: dockerStrategyOptions,
 	}
 }
 
 type pipelineBuilder struct {
-	nameGenerator UniqueNameGenerator
-	environment   Environment
-	outputDocker  bool
-	to            string
+	nameGenerator         UniqueNameGenerator
+	environment           Environment
+	outputDocker          bool
+	to                    string
+	dockerStrategyOptions *build.DockerStrategyOptions
 }
 
 func (pb *pipelineBuilder) To(name string) PipelineBuilder {
@@ -119,6 +122,7 @@ func (pb *pipelineBuilder) NewBuildPipeline(from string, input *ImageRef, source
 		Strategy: strategy,
 		Output:   output,
 		Env:      pb.environment,
+		DockerStrategyOptions: pb.dockerStrategyOptions,
 	}
 
 	return &Pipeline{
@@ -298,10 +302,10 @@ func portName(port int, protocol kapi.Protocol) string {
 }
 
 // GenerateService creates a simple service for the provided elements.
-func GenerateService(meta kapi.ObjectMeta, selector map[string]string) *kapi.Service {
+func GenerateService(meta metav1.ObjectMeta, selector map[string]string) *kapi.Service {
 	name, generateName := makeValidServiceName(meta.Name)
 	svc := &kapi.Service{
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:         name,
 			GenerateName: generateName,
 			Labels:       meta.Labels,
@@ -365,7 +369,7 @@ func AddServices(objects Objects, firstPortOnly bool) Objects {
 }
 
 // addServiceInternal utility used by AddServices to create services for multiple types.
-func addServiceInternal(containers []kapi.Container, objectMeta kapi.ObjectMeta, selector map[string]string, firstPortOnly bool) *kapi.Service {
+func addServiceInternal(containers []kapi.Container, objectMeta metav1.ObjectMeta, selector map[string]string, firstPortOnly bool) *kapi.Service {
 	ports := UniqueContainerToServicePorts(AllContainerPorts(containers...))
 	if len(ports) == 0 {
 		return nil
@@ -385,7 +389,7 @@ func AddRoutes(objects Objects) Objects {
 		switch t := o.(type) {
 		case *kapi.Service:
 			routes = append(routes, &route.Route{
-				ObjectMeta: kapi.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Name:   t.Name,
 					Labels: t.Labels,
 				},
@@ -450,12 +454,12 @@ func NewAcceptUnique(typer runtime.ObjectTyper) Acceptor {
 	}
 }
 
-func objectMetaData(raw interface{}) (runtime.Object, *kapi.ObjectMeta, error) {
+func objectMetaData(raw interface{}) (runtime.Object, *metav1.ObjectMeta, error) {
 	obj, ok := raw.(runtime.Object)
 	if !ok {
 		return nil, nil, fmt.Errorf("%#v is not a runtime.Object", raw)
 	}
-	meta, err := kapi.ObjectMetaFor(obj)
+	meta, err := metav1.ObjectMetaFor(obj)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -476,7 +480,8 @@ func (a *acceptBuildConfigs) Accept(from interface{}) bool {
 	if err != nil {
 		return false
 	}
-	return gvk[0].GroupKind() == build.Kind("BuildConfig") || gvk[0].GroupKind() == image.Kind("ImageStream")
+	gk := gvk[0].GroupKind()
+	return build.IsKindOrLegacy("BuildConfig", gk) || image.IsKindOrLegacy("ImageStream", gk)
 }
 
 // NewAcceptBuildConfigs creates an acceptor accepting BuildConfig objects

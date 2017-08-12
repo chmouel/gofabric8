@@ -8,24 +8,32 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
+	dockertypes "github.com/docker/engine-api/types"
 	docker "github.com/fsouza/go-dockerclient"
-	"k8s.io/kubernetes/pkg/util/interrupt"
-	utilruntime "k8s.io/kubernetes/pkg/util/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	"github.com/openshift/source-to-image/pkg/tar"
+	s2iutil "github.com/openshift/source-to-image/pkg/util"
 
+	"k8s.io/kubernetes/pkg/credentialprovider"
+	"k8s.io/kubernetes/pkg/util/interrupt"
+
+	"github.com/openshift/imagebuilder"
+	"github.com/openshift/imagebuilder/dockerclient"
 	"github.com/openshift/imagebuilder/imageprogress"
 )
 
 var (
-	// DefaultPushRetryCount is the number of retries of pushing the built Docker image
+	// DefaultPushOrPullRetryCount is the number of retries of pushing or pulling the built Docker image
 	// into a configured repository
-	DefaultPushRetryCount = 6
-	// DefaultPushRetryDelay is the time to wait before triggering a push retry
-	DefaultPushRetryDelay = 5 * time.Second
+	DefaultPushOrPullRetryCount = 6
+	// DefaultPushOrPullRetryDelay is the time to wait before triggering a push or pull retry
+	DefaultPushOrPullRetryDelay = 5 * time.Second
 	// RetriableErrors is a set of strings that indicate that an retriable error occurred.
 	RetriableErrors = []string{
 		"ping attempt failed with error",
@@ -33,6 +41,9 @@ var (
 		"connection reset by peer",
 		"transport closed before response was received",
 		"connection refused",
+		"no route to host",
+		"unexpected end of JSON input",
+		"i/o timeout",
 	}
 )
 
@@ -54,6 +65,47 @@ type DockerClient interface {
 	TagImage(name string, opts docker.TagImageOptions) error
 }
 
+func RetryImageAction(client DockerClient, opts interface{}, authConfig docker.AuthConfiguration) error {
+	var err error
+	var retriableError = false
+	var actionName string
+
+	pullOpt := docker.PullImageOptions{}
+	pushOpt := docker.PushImageOptions{}
+
+	for retries := 0; retries <= DefaultPushOrPullRetryCount; retries++ {
+		if reflect.TypeOf(opts) == reflect.TypeOf(pullOpt) {
+			actionName = "Pull"
+			err = client.PullImage(opts.(docker.PullImageOptions), authConfig)
+		} else if reflect.TypeOf(opts) == reflect.TypeOf(pushOpt) {
+			actionName = "Push"
+			err = client.PushImage(opts.(docker.PushImageOptions), authConfig)
+		} else {
+			return errors.New("not match Pull or Push action")
+		}
+
+		if err == nil {
+			return nil
+		}
+
+		errMsg := fmt.Sprintf("%s", err)
+		for _, errorString := range RetriableErrors {
+			if strings.Contains(errMsg, errorString) {
+				retriableError = true
+				break
+			}
+		}
+		if !retriableError {
+			return err
+		}
+
+		glog.V(0).Infof("Warning: %s failed, retrying in %s ...", actionName, DefaultPushOrPullRetryDelay)
+		time.Sleep(DefaultPushOrPullRetryDelay)
+	}
+
+	return fmt.Errorf("After retrying %d times, %s image still failed", DefaultPushOrPullRetryCount, actionName)
+}
+
 func pullImage(client DockerClient, name string, authConfig docker.AuthConfiguration) error {
 	logProgress := func(s string) {
 		glog.V(0).Infof("%s", s)
@@ -67,11 +119,7 @@ func pullImage(client DockerClient, name string, authConfig docker.AuthConfigura
 		opts.OutputStream = os.Stderr
 		opts.RawJSONStream = false
 	}
-	err := client.PullImage(opts, authConfig)
-	if err == nil {
-		return nil
-	}
-	return err
+	return RetryImageAction(client, opts, authConfig)
 }
 
 // pushImage pushes a docker image to the registry specified in its tag.
@@ -102,30 +150,11 @@ func pushImage(client DockerClient, name string, authConfig docker.AuthConfigura
 		OutputStream:  io.MultiWriter(progressWriter, digestWriter),
 		RawJSONStream: true,
 	}
-	var err error
-	var retriableError = false
 
-	for retries := 0; retries <= DefaultPushRetryCount; retries++ {
-		err = client.PushImage(opts, authConfig)
-		if err == nil {
-			return digestWriter.Digest, nil
-		}
-
-		errMsg := fmt.Sprintf("%s", err)
-		for _, errorString := range RetriableErrors {
-			if strings.Contains(errMsg, errorString) {
-				retriableError = true
-				break
-			}
-		}
-		if !retriableError {
-			return "", err
-		}
-
-		glog.V(0).Infof("Warning: Push failed, retrying in %s ...", DefaultPushRetryDelay)
-		time.Sleep(DefaultPushRetryDelay)
+	if err := RetryImageAction(client, opts, authConfig); err != nil {
+		return "", err
 	}
-	return "", err
+	return digestWriter.Digest, nil
 }
 
 func removeImage(client DockerClient, name string) error {
@@ -152,6 +181,91 @@ func buildImage(client DockerClient, dir string, tar tar.Tar, opts *docker.Build
 	return client.BuildImage(*opts)
 }
 
+// buildDirectImage invokes a docker build on a particular directory using imagebuilder
+func buildDirectImage(dir string, ignoreFailures bool, opts *docker.BuildImageOptions) error {
+	glog.V(5).Infof("Invoking imagebuilder to create %q in dir %s with Dockerfile %s", opts.Name, dir, opts.Dockerfile)
+
+	e := dockerclient.NewClientExecutor(nil)
+	e.Directory = dir
+	e.Tag = opts.Name
+
+	e.IgnoreUnrecognizedInstructions = ignoreFailures
+	e.StrictVolumeOwnership = !ignoreFailures
+	e.HostConfig = &docker.HostConfig{
+		NetworkMode: opts.NetworkMode,
+		CPUShares:   opts.CPUShares,
+		CPUPeriod:   opts.CPUPeriod,
+		CPUSetCPUs:  opts.CPUSetCPUs,
+		CPUQuota:    opts.CPUQuota,
+		Memory:      opts.Memory,
+		MemorySwap:  opts.Memswap,
+	}
+
+	e.Out, e.ErrOut = opts.OutputStream, opts.OutputStream
+
+	// use a keyring
+	keys := make(credentialprovider.DockerConfig)
+	for k, v := range opts.AuthConfigs.Configs {
+		keys[k] = credentialprovider.DockerConfigEntry{
+			Username: v.Username,
+			Password: v.Password,
+			Email:    v.Email,
+		}
+	}
+	keyring := credentialprovider.BasicDockerKeyring{}
+	keyring.Add(keys)
+	e.AuthFn = func(name string) ([]dockertypes.AuthConfig, bool) {
+		authConfs, found := keyring.Lookup(name)
+		var out []dockertypes.AuthConfig
+		for _, conf := range authConfs {
+			out = append(out, conf.AuthConfig)
+		}
+		return out, found
+	}
+
+	e.LogFn = func(format string, args ...interface{}) {
+		if glog.Is(3) {
+			glog.Infof("Builder: "+format, args...)
+		} else {
+			fmt.Fprintf(e.ErrOut, "--> %s\n", fmt.Sprintf(format, args...))
+		}
+	}
+
+	arguments := make(map[string]string)
+	for _, arg := range opts.BuildArgs {
+		arguments[arg.Name] = arg.Value
+	}
+
+	if err := e.DefaultExcludes(); err != nil {
+		return fmt.Errorf("error: Could not parse default .dockerignore: %v", err)
+	}
+
+	client, err := dockerclient.NewClientFromEnv()
+	if err != nil {
+		return fmt.Errorf("error: No connection to Docker available: %v", err)
+	}
+	e.Client = client
+
+	releaseFn := func() {
+		for _, err := range e.Release() {
+			fmt.Fprintf(e.ErrOut, "error: Unable to clean up build: %v\n", err)
+		}
+	}
+	return interrupt.New(nil, releaseFn).Run(func() error {
+		b, node, err := imagebuilder.NewBuilderForFile(filepath.Join(dir, opts.Dockerfile), arguments)
+		if err != nil {
+			return err
+		}
+		if err := e.Prepare(b, node); err != nil {
+			return err
+		}
+		if err := e.Execute(b, node); err != nil {
+			return err
+		}
+		return e.Commit(b)
+	})
+}
+
 // tagImage uses the dockerClient to tag a Docker image with name. It is a
 // helper to facilitate the usage of dockerClient.TagImage, because the former
 // requires the name to be split into more explicit parts.
@@ -172,7 +286,12 @@ func tagImage(dockerClient DockerClient, image, name string) error {
 // removed after it terminates.
 func dockerRun(client DockerClient, createOpts docker.CreateContainerOptions, attachOpts docker.AttachToContainerOptions) error {
 	// Create a new container.
-	glog.V(4).Infof("Creating container with options {Name:%q Config:%+v HostConfig:%+v} ...", createOpts.Name, createOpts.Config, createOpts.HostConfig)
+	// First strip any inlined proxy credentials from the *proxy* env variables,
+	// before logging the env variables.
+	if glog.Is(4) {
+		redactedOpts := SafeForLoggingDockerCreateOptions(&createOpts)
+		glog.V(4).Infof("Creating container with options {Name:%q Config:%+v HostConfig:%+v} ...", redactedOpts.Name, redactedOpts.Config, redactedOpts.HostConfig)
+	}
 	c, err := client.CreateContainer(createOpts)
 	if err != nil {
 		return fmt.Errorf("create container %q: %v", createOpts.Name, err)
@@ -361,4 +480,36 @@ func newDigestWriter() *digestWriter {
 		return nil
 	})
 	return &dw
+}
+
+// GetDockerClient returns a valid Docker client, the address of the client, or an error
+// if the client couldn't be created.
+func GetDockerClient() (client *docker.Client, endpoint string, err error) {
+	client, err = docker.NewClientFromEnv()
+	if len(os.Getenv("DOCKER_HOST")) > 0 {
+		endpoint = os.Getenv("DOCKER_HOST")
+	} else {
+		endpoint = "unix:///var/run/docker.sock"
+	}
+	return
+}
+
+// SafeForLoggingDockerConfig returns a copy of a docker config struct
+// where any proxy credentials in the env section of the config
+// have been redacted.
+func SafeForLoggingDockerConfig(config *docker.Config) *docker.Config {
+	origEnv := config.Env
+	newConfig := *config
+	newConfig.Env = s2iutil.SafeForLoggingEnv(origEnv)
+	return &newConfig
+}
+
+// SafeForLoggingDockerCreateOptions returns a copy of a docker
+// create container options struct where any proxy credentials in the env section of
+// the config have been redacted.
+func SafeForLoggingDockerCreateOptions(opts *docker.CreateContainerOptions) *docker.CreateContainerOptions {
+	origConfig := opts.Config
+	newOpts := *opts
+	newOpts.Config = SafeForLoggingDockerConfig(origConfig)
+	return &newOpts
 }

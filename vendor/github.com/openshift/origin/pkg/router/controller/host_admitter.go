@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	"github.com/golang/glog"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/watch"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/watch"
 
-	routeapi "github.com/openshift/origin/pkg/route/api"
+	routeapi "github.com/openshift/origin/pkg/route/apis/route"
 	"github.com/openshift/origin/pkg/router"
 )
 
@@ -147,7 +147,7 @@ func (p *HostAdmitter) HandleRoute(eventType watch.EventType, route *routeapi.Ro
 	return p.plugin.HandleRoute(eventType, route)
 }
 
-// HandleAllowedNamespaces limits the scope of valid routes to only those that match
+// HandleNamespaces limits the scope of valid routes to only those that match
 // the provided namespace list.
 func (p *HostAdmitter) HandleNamespaces(namespaces sets.String) error {
 	return p.plugin.HandleNamespaces(namespaces)

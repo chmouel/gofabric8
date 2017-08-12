@@ -3,9 +3,9 @@ package plugin
 import (
 	"testing"
 
-	"k8s.io/kubernetes/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/sets"
 
-	osapi "github.com/openshift/origin/pkg/sdn/api"
+	osapi "github.com/openshift/origin/pkg/sdn/apis/network"
 )
 
 func TestNodeVNIDMap(t *testing.T) {
@@ -144,14 +144,14 @@ func TestNodeVNIDMap(t *testing.T) {
 }
 
 func checkExists(t *testing.T, vmap *nodeVNIDMap, name string, expected uint32) {
-	id, err := vmap.GetVNID(name)
+	id, err := vmap.getVNID(name)
 	if id != expected || err != nil {
 		t.Fatalf("Unexpected failure: %d, %v", id, err)
 	}
 }
 
 func checkNotExists(t *testing.T, vmap *nodeVNIDMap, name string) {
-	id, err := vmap.GetVNID(name)
+	id, err := vmap.getVNID(name)
 	if err == nil {
 		t.Fatalf("Unexpected success: %d", id)
 	}

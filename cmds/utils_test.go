@@ -20,8 +20,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	restclient "k8s.io/client-go/rest"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	"k8s.io/kubernetes/pkg/client/restclient"
 )
 
 // NB(chmou): I don't like this either :\

@@ -5,8 +5,7 @@ import (
 	"testing"
 
 	authapi "github.com/openshift/origin/pkg/auth/api"
-	"github.com/openshift/origin/pkg/user/api"
-	userapi "github.com/openshift/origin/pkg/user/api"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
 	"github.com/openshift/origin/pkg/user/registry/test"
 	mappingregistry "github.com/openshift/origin/pkg/user/registry/useridentitymapping"
 )
@@ -31,7 +30,7 @@ func TestLookup(t *testing.T) {
 			ExistingUser:     nil,
 
 			ExpectedActions: []test.Action{
-				{"GetIdentity", "idp:bob"},
+				{Name: "GetIdentity", Object: "idp:bob"},
 			},
 			ExpectedError: true,
 		},
@@ -44,7 +43,7 @@ func TestLookup(t *testing.T) {
 			ExistingUser:     nil,
 
 			ExpectedActions: []test.Action{
-				{"GetIdentity", "idp:bob"},
+				{Name: "GetIdentity", Object: "idp:bob"},
 			},
 			ExpectedError: true,
 		},
@@ -56,8 +55,8 @@ func TestLookup(t *testing.T) {
 			ExistingUser:     nil,
 
 			ExpectedActions: []test.Action{
-				{"GetIdentity", "idp:bob"},
-				{"GetUser", "bob"},
+				{Name: "GetIdentity", Object: "idp:bob"},
+				{Name: "GetUser", Object: "bob"},
 			},
 			ExpectedError: true,
 		},
@@ -69,8 +68,8 @@ func TestLookup(t *testing.T) {
 			ExistingUser:     makeUser("bobUserUID", "bob", "idp:bob"),
 
 			ExpectedActions: []test.Action{
-				{"GetIdentity", "idp:bob"},
-				{"GetUser", "bob"},
+				{Name: "GetIdentity", Object: "idp:bob"},
+				{Name: "GetUser", Object: "bob"},
 			},
 			ExpectedError: true,
 		},
@@ -82,8 +81,8 @@ func TestLookup(t *testing.T) {
 			ExistingUser:     makeUser("bobUserUID", "bob" /*, "idp:bob"*/),
 
 			ExpectedActions: []test.Action{
-				{"GetIdentity", "idp:bob"},
-				{"GetUser", "bob"},
+				{Name: "GetIdentity", Object: "idp:bob"},
+				{Name: "GetUser", Object: "bob"},
 			},
 			ExpectedError: true,
 		},
@@ -95,9 +94,9 @@ func TestLookup(t *testing.T) {
 			ExistingUser:     makeUser("bobUserUID", "bob", "idp:bob"),
 
 			ExpectedActions: []test.Action{
-				{"GetIdentity", "idp:bob"},
-				{"GetUser", "bob"},
-				{"GetUser", "bob"}, // extra request is for group lookup
+				{Name: "GetIdentity", Object: "idp:bob"},
+				{Name: "GetUser", Object: "bob"},
+				{Name: "GetUser", Object: "bob"}, // extra request is for group lookup
 			},
 			ExpectedUserName: "bob",
 		},
@@ -106,11 +105,11 @@ func TestLookup(t *testing.T) {
 	for k, tc := range testcases {
 		actions := []test.Action{}
 		identityRegistry := &test.IdentityRegistry{
-			Get:     map[string]*api.Identity{},
+			Get:     map[string]*userapi.Identity{},
 			Actions: &actions,
 		}
 		userRegistry := &test.UserRegistry{
-			Get:     map[string]*api.User{},
+			Get:     map[string]*userapi.User{},
 			Actions: &actions,
 		}
 		if tc.ExistingIdentity != nil {

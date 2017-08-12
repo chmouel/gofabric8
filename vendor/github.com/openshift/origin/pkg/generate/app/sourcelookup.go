@@ -20,7 +20,7 @@ import (
 	kapi "k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/validation"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/generate"
 	"github.com/openshift/origin/pkg/generate/git"
 	"github.com/openshift/origin/pkg/generate/source"
@@ -66,30 +66,33 @@ func (d dockerfileContents) Contents() string {
 	return d.contents
 }
 
-// IsPossibleSourceRepository checks whether the provided string is a source repository or not
-func IsPossibleSourceRepository(s string) bool {
-	return IsRemoteRepository(s) || isDirectory(s)
-}
-
 // IsRemoteRepository checks whether the provided string is a remote repository or not
-func IsRemoteRepository(s string) bool {
+func IsRemoteRepository(s string) (bool, error) {
 	if !s2igit.New(s2iutil.NewFileSystem()).ValidCloneSpecRemoteOnly(s) {
 		glog.V(5).Infof("%s is not a valid remote git clone spec", s)
-		return false
+		return false, nil
 	}
 	url, err := url.Parse(s)
 	if err != nil {
 		glog.V(5).Infof("%s is not a valid url: %v", s, err)
-		return false
+		return false, err
 	}
 	url.Fragment = ""
 	gitRepo := git.NewRepository()
-	if _, _, err := gitRepo.ListRemote(url.String()); err != nil {
+
+	// try up to 3 times to reach the remote git repo
+	for i := 0; i < 3; i++ {
+		_, _, err = gitRepo.ListRemote(url.String())
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
 		glog.V(5).Infof("could not list git remotes for %s: %v", s, err)
-		return false
+		return false, err
 	}
 	glog.V(5).Infof("%s is a valid remote git repository", s)
-	return true
+	return true, nil
 }
 
 // SourceRepository represents a code repository that may be the target of a build.
@@ -263,6 +266,9 @@ func (r *SourceRepository) LocalPath() (string, error) {
 		if err != nil {
 			return "", err
 		}
+	}
+	if _, err := os.Stat(r.localDir); os.IsNotExist(err) {
+		return "", fmt.Errorf("supplied context directory '%s' does not exist in '%s'", r.contextDir, r.url.String())
 	}
 	return r.localDir, nil
 }
@@ -595,7 +601,10 @@ func CloneAndCheckoutSources(repo git.Repository, remote, ref, localDir, context
 	}
 	if len(ref) > 0 {
 		if err := repo.Checkout(localDir, ref); err != nil {
-			return "", fmt.Errorf("unable to checkout ref %q in %q repository: %v", ref, remote, err)
+			err = repo.PotentialPRRetryAsFetch(localDir, remote, ref, err)
+			if err != nil {
+				return "", fmt.Errorf("unable to checkout ref %q in %q repository: %v", ref, remote, err)
+			}
 		}
 	}
 	if len(contextDir) > 0 {

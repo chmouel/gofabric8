@@ -3,11 +3,14 @@ package defaults
 import (
 	"github.com/golang/glog"
 	kapi "k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/v1"
 
 	buildadmission "github.com/openshift/origin/pkg/build/admission"
 	defaultsapi "github.com/openshift/origin/pkg/build/admission/defaults/api"
 	"github.com/openshift/origin/pkg/build/admission/defaults/api/validation"
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	"github.com/openshift/origin/pkg/build/util"
+	buildutil "github.com/openshift/origin/pkg/build/util"
 	configapi "github.com/openshift/origin/pkg/cmd/server/api"
 )
 
@@ -31,7 +34,7 @@ func NewBuildDefaults(pluginConfig map[string]configapi.AdmissionPluginConfig) (
 }
 
 // ApplyDefaults applies configured build defaults to a build pod
-func (b BuildDefaults) ApplyDefaults(pod *kapi.Pod) error {
+func (b BuildDefaults) ApplyDefaults(pod *v1.Pod) error {
 	if b.config == nil {
 		return nil
 	}
@@ -55,7 +58,7 @@ func (b BuildDefaults) ApplyDefaults(pod *kapi.Pod) error {
 	return buildadmission.SetBuildInPod(pod, build, version)
 }
 
-func (b BuildDefaults) applyPodDefaults(pod *kapi.Pod) {
+func (b BuildDefaults) applyPodDefaults(pod *v1.Pod) {
 	if len(b.config.NodeSelector) != 0 && pod.Spec.NodeSelector == nil {
 		// only apply nodeselector defaults if the pod has no nodeselector labels
 		// already.
@@ -71,14 +74,40 @@ func (b BuildDefaults) applyPodDefaults(pod *kapi.Pod) {
 	for k, v := range b.config.Annotations {
 		addDefaultAnnotations(k, v, pod.Annotations)
 	}
+
+	// Apply default resources
+	defaultResources := b.config.Resources
+	for i := range pod.Spec.Containers {
+		podEnv := &pod.Spec.Containers[i].Env
+		util.MergeTrustedEnvWithoutDuplicates(util.CopyApiEnvVarToV1EnvVar(b.config.Env), podEnv, false)
+
+		if pod.Spec.Containers[i].Resources.Limits == nil {
+			pod.Spec.Containers[i].Resources.Limits = v1.ResourceList{}
+		}
+		for name, value := range defaultResources.Limits {
+			if _, ok := pod.Spec.Containers[i].Resources.Limits[v1.ResourceName(name)]; !ok {
+				glog.V(5).Infof("Setting default resource limit %s for pod %s/%s to %s", name, pod.Namespace, pod.Name, value)
+				pod.Spec.Containers[i].Resources.Limits[v1.ResourceName(name)] = value
+			}
+		}
+		if pod.Spec.Containers[i].Resources.Requests == nil {
+			pod.Spec.Containers[i].Resources.Requests = v1.ResourceList{}
+		}
+		for name, value := range defaultResources.Requests {
+			if _, ok := pod.Spec.Containers[i].Resources.Requests[v1.ResourceName(name)]; !ok {
+				glog.V(5).Infof("Setting default resource request %s for pod %s/%s to %s", name, pod.Namespace, pod.Name, value)
+				pod.Spec.Containers[i].Resources.Requests[v1.ResourceName(name)] = value
+			}
+		}
+	}
+
 }
 
 func (b BuildDefaults) applyBuildDefaults(build *buildapi.Build) {
 	// Apply default env
-	buildEnv := getBuildEnv(build)
 	for _, envVar := range b.config.Env {
 		glog.V(5).Infof("Adding default environment variable %s=%s to build %s/%s", envVar.Name, envVar.Value, build.Namespace, build.Name)
-		addDefaultEnvVar(envVar, buildEnv)
+		addDefaultEnvVar(build, envVar)
 	}
 
 	// Apply default labels
@@ -126,7 +155,7 @@ func (b BuildDefaults) applyBuildDefaults(build *buildapi.Build) {
 
 	//Apply default resources
 	defaultResources := b.config.Resources
-	if len(build.Spec.Resources.Limits) == 0 {
+	if build.Spec.Resources.Limits == nil {
 		build.Spec.Resources.Limits = kapi.ResourceList{}
 	}
 	for name, value := range defaultResources.Limits {
@@ -135,7 +164,7 @@ func (b BuildDefaults) applyBuildDefaults(build *buildapi.Build) {
 			build.Spec.Resources.Limits[name] = value
 		}
 	}
-	if len(build.Spec.Resources.Requests) == 0 {
+	if build.Spec.Resources.Requests == nil {
 		build.Spec.Resources.Requests = kapi.ResourceList{}
 	}
 	for name, value := range defaultResources.Requests {
@@ -146,29 +175,16 @@ func (b BuildDefaults) applyBuildDefaults(build *buildapi.Build) {
 	}
 }
 
-func getBuildEnv(build *buildapi.Build) *[]kapi.EnvVar {
-	switch {
-	case build.Spec.Strategy.DockerStrategy != nil:
-		return &build.Spec.Strategy.DockerStrategy.Env
-	case build.Spec.Strategy.SourceStrategy != nil:
-		return &build.Spec.Strategy.SourceStrategy.Env
-	case build.Spec.Strategy.CustomStrategy != nil:
-		return &build.Spec.Strategy.CustomStrategy.Env
-	}
-	return nil
-}
+func addDefaultEnvVar(build *buildapi.Build, v kapi.EnvVar) {
+	envVars := buildutil.GetBuildEnv(build)
 
-func addDefaultEnvVar(v kapi.EnvVar, envVars *[]kapi.EnvVar) {
-	if envVars == nil {
-		return
-	}
-
-	for i := range *envVars {
-		if (*envVars)[i].Name == v.Name {
+	for i := range envVars {
+		if envVars[i].Name == v.Name {
 			return
 		}
 	}
-	*envVars = append(*envVars, v)
+	envVars = append(envVars, v)
+	buildutil.SetBuildEnv(build, envVars)
 }
 
 func addDefaultLabel(defaultLabel buildapi.ImageLabel, buildLabels *[]buildapi.ImageLabel) {

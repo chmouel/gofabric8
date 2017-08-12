@@ -8,12 +8,12 @@ import (
 
 	"github.com/ghodss/yaml"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/util/diff"
 
 	"github.com/openshift/origin/pkg/api/v1"
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	"github.com/openshift/origin/pkg/authorization/rulevalidation"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
 
@@ -107,6 +107,7 @@ func TestCovers(t *testing.T) {
 	var systemDiscovery *authorizationapi.ClusterRole
 	var clusterAdmin *authorizationapi.ClusterRole
 	var storageAdmin *authorizationapi.ClusterRole
+	var imageBuilder *authorizationapi.ClusterRole
 
 	for i := range allRoles {
 		role := allRoles[i]
@@ -131,6 +132,8 @@ func TestCovers(t *testing.T) {
 			clusterAdmin = &role
 		case bootstrappolicy.StorageAdminRoleName:
 			storageAdmin = &role
+		case bootstrappolicy.ImageBuilderRoleName:
+			imageBuilder = &role
 		}
 	}
 
@@ -153,6 +156,14 @@ func TestCovers(t *testing.T) {
 		t.Errorf("failed to cover: %#v", miss)
 	}
 	if covers, miss := rulevalidation.Covers(registryAdmin.Rules, registryViewer.Rules); !covers {
+		t.Errorf("failed to cover: %#v", miss)
+	}
+
+	// admin and editor should cover imagebuilder
+	if covers, miss := rulevalidation.Covers(admin.Rules, imageBuilder.Rules); !covers {
+		t.Errorf("failed to cover: %#v", miss)
+	}
+	if covers, miss := rulevalidation.Covers(editor.Rules, imageBuilder.Rules); !covers {
 		t.Errorf("failed to cover: %#v", miss)
 	}
 

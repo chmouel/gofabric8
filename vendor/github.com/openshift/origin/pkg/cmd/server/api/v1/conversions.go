@@ -1,10 +1,10 @@
 package v1
 
 import (
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/conversion"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/util/sets"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/conversion"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/openshift/origin/pkg/api/extension"
 	internal "github.com/openshift/origin/pkg/cmd/server/api"
@@ -20,11 +20,19 @@ func addDefaultingFuncs(scheme *runtime.Scheme) error {
 			if len(obj.Controllers) == 0 {
 				obj.Controllers = ControllersAll
 			}
+			if election := obj.ControllerConfig.Election; election != nil {
+				if len(election.LockNamespace) == 0 {
+					election.LockNamespace = "kube-system"
+				}
+				if len(election.LockResource.Group) == 0 && len(election.LockResource.Resource) == 0 {
+					election.LockResource.Resource = "endpoints"
+				}
+			}
 			if obj.ServingInfo.RequestTimeoutSeconds == 0 {
 				obj.ServingInfo.RequestTimeoutSeconds = 60 * 60
 			}
 			if obj.ServingInfo.MaxRequestsInFlight == 0 {
-				obj.ServingInfo.MaxRequestsInFlight = 500
+				obj.ServingInfo.MaxRequestsInFlight = 1200
 			}
 			if len(obj.PolicyConfig.OpenShiftInfrastructureNamespace) == 0 {
 				obj.PolicyConfig.OpenShiftInfrastructureNamespace = bootstrappolicy.DefaultOpenShiftInfraNamespace
@@ -104,6 +112,9 @@ func addDefaultingFuncs(scheme *runtime.Scheme) error {
 			if obj.MasterCount == 0 {
 				obj.MasterCount = 1
 			}
+			if obj.MasterEndpointReconcileTTL == 0 {
+				obj.MasterEndpointReconcileTTL = 15
+			}
 			if len(obj.APILevels) == 0 {
 				obj.APILevels = internal.DefaultKubernetesAPILevels
 			}
@@ -172,6 +183,12 @@ func addDefaultingFuncs(scheme *runtime.Scheme) error {
 		func(obj *DockerConfig) {
 			if len(obj.ExecHandlerName) == 0 {
 				obj.ExecHandlerName = DockerExecHandlerNative
+			}
+			if len(obj.DockerShimSocket) == 0 {
+				obj.DockerShimSocket = "/var/run/dockershim.sock"
+			}
+			if len(obj.DockershimRootDirectory) == 0 {
+				obj.DockershimRootDirectory = "/var/lib/dockershim"
 			}
 		},
 		func(obj *ServingInfo) {
@@ -336,9 +353,9 @@ func addConversionFuncs(scheme *runtime.Scheme) error {
 			return nil
 		},
 
-		api.Convert_resource_Quantity_To_resource_Quantity,
-		api.Convert_bool_To_Pointer_bool,
-		api.Convert_Pointer_bool_To_bool,
+		metav1.Convert_resource_Quantity_To_resource_Quantity,
+		metav1.Convert_bool_To_Pointer_bool,
+		metav1.Convert_Pointer_bool_To_bool,
 	)
 }
 

@@ -7,7 +7,7 @@ import (
 	g "github.com/onsi/ginkgo"
 	o "github.com/onsi/gomega"
 
-	kapi "k8s.io/kubernetes/pkg/api"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	imageeco "github.com/openshift/origin/test/extended/image_ecosystem"
 	exutil "github.com/openshift/origin/test/extended/util"
@@ -50,7 +50,7 @@ var _ = g.Describe("[builds][Slow] builds with a context directory", func() {
 			// oc.KubeFramework().WaitForAnEndpoint currently will wait forever;  for now, prefacing with our WaitForADeploymentToComplete,
 			// which does have a timeout, since in most cases a failure in the service coming up stems from a failed deployment
 			g.By("waiting for a deployment")
-			err = exutil.WaitForADeploymentToComplete(oc.KubeClient().Core().ReplicationControllers(oc.Namespace()), dcName, oc)
+			err = exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.Client(), oc.Namespace(), dcName, 1, oc)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("waiting for endpoint")
@@ -70,7 +70,7 @@ var _ = g.Describe("[builds][Slow] builds with a context directory", func() {
 			assertPageContent("Hello world!")
 
 			g.By("checking the pod count")
-			pods, err := oc.KubeClient().Core().Pods(oc.Namespace()).List(kapi.ListOptions{LabelSelector: dcLabel})
+			pods, err := oc.KubeClient().Core().Pods(oc.Namespace()).List(metav1.ListOptions{LabelSelector: dcLabel.String()})
 			o.Expect(err).NotTo(o.HaveOccurred())
 			o.Expect(len(pods.Items)).To(o.Equal(1))
 

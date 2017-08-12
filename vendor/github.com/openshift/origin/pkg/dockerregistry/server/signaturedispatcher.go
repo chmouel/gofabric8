@@ -7,7 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	kapierrors "k8s.io/kubernetes/pkg/api/errors"
+	kapierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	ctxu "github.com/docker/distribution/context"
 
@@ -16,7 +16,7 @@ import (
 	"github.com/docker/distribution/registry/api/v2"
 	"github.com/docker/distribution/registry/handlers"
 
-	imageapi "github.com/openshift/origin/pkg/image/api"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 
 	gorillahandlers "github.com/gorilla/handlers"
 )
@@ -80,7 +80,7 @@ func (s *signatureHandler) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, ok := UserClientFrom(s.ctx)
+	client, ok := userClientFrom(s.ctx)
 	if !ok {
 		s.handleError(s.ctx, errcode.ErrorCodeUnknown.WithDetail("unable to get origin client"), w)
 		return
@@ -140,7 +140,7 @@ func (s *signatureHandler) Get(w http.ResponseWriter, req *http.Request) {
 		s.handleError(s.ctx, v2.ErrorCodeNameInvalid.WithDetail("missing image name or image ID"), w)
 		return
 	}
-	client, ok := UserClientFrom(s.ctx)
+	client, ok := userClientFrom(s.ctx)
 	if !ok {
 		s.handleError(s.ctx, errcode.ErrorCodeUnknown.WithDetail("unable to get origin client"), w)
 		return

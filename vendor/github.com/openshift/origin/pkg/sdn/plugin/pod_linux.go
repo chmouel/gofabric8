@@ -4,26 +4,24 @@ package plugin
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net"
-	"os/exec"
-	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 
-	sdnapi "github.com/openshift/origin/pkg/sdn/api"
+	sdnapi "github.com/openshift/origin/pkg/sdn/apis/network"
 	"github.com/openshift/origin/pkg/sdn/plugin/cniserver"
+	"github.com/openshift/origin/pkg/util/ipcmd"
 
 	"github.com/golang/glog"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	kapi "k8s.io/kubernetes/pkg/api"
+	kapiv1 "k8s.io/kubernetes/pkg/api/v1"
 	kcontainer "k8s.io/kubernetes/pkg/kubelet/container"
-	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	knetwork "k8s.io/kubernetes/pkg/kubelet/network"
-	kubehostport "k8s.io/kubernetes/pkg/kubelet/network/hostport"
+	"k8s.io/kubernetes/pkg/kubelet/network/hostport"
 	kbandwidth "k8s.io/kubernetes/pkg/util/bandwidth"
-	ksets "k8s.io/kubernetes/pkg/util/sets"
+	kexec "k8s.io/kubernetes/pkg/util/exec"
 
 	"github.com/containernetworking/cni/pkg/invoke"
 	"github.com/containernetworking/cni/pkg/ip"
@@ -35,84 +33,8 @@ import (
 )
 
 const (
-	sdnScript   = "openshift-sdn-ovs"
-	setUpCmd    = "setup"
-	tearDownCmd = "teardown"
-	updateCmd   = "update"
-
 	podInterfaceName = knetwork.DefaultInterfaceName
 )
-
-type PodConfig struct {
-	vnid             uint32
-	ingressBandwidth string
-	egressBandwidth  string
-	wantMacvlan      bool
-}
-
-func getBandwidth(pod *kapi.Pod) (string, string, error) {
-	ingress, egress, err := kbandwidth.ExtractPodBandwidthResources(pod.Annotations)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to parse pod bandwidth: %v", err)
-	}
-	var ingressStr, egressStr string
-	if ingress != nil {
-		ingressStr = fmt.Sprintf("%d", ingress.Value())
-	}
-	if egress != nil {
-		egressStr = fmt.Sprintf("%d", egress.Value())
-	}
-	return ingressStr, egressStr, nil
-}
-
-func wantsMacvlan(pod *kapi.Pod) (bool, error) {
-	privileged := false
-	for _, container := range pod.Spec.Containers {
-		if container.SecurityContext != nil && container.SecurityContext.Privileged != nil && *container.SecurityContext.Privileged {
-			privileged = true
-			break
-		}
-	}
-
-	val, ok := pod.Annotations[sdnapi.AssignMacvlanAnnotation]
-	if !ok || val != "true" {
-		return false, nil
-	}
-	if !privileged {
-		return false, fmt.Errorf("pod has %q annotation but is not privileged", sdnapi.AssignMacvlanAnnotation)
-	}
-
-	return true, nil
-}
-
-// Create and return a PodConfig describing which openshift-sdn specific pod attributes
-// to configure
-func (m *podManager) getPodConfig(req *cniserver.PodRequest) (*PodConfig, *kapi.Pod, error) {
-	var err error
-
-	config := &PodConfig{}
-	config.vnid, err = m.policy.GetVNID(req.PodNamespace)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pod, err := m.kClient.Pods(req.PodNamespace).Get(req.PodName)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read pod %s/%s: %v", req.PodNamespace, req.PodName, err)
-	}
-
-	config.wantMacvlan, err = wantsMacvlan(pod)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	config.ingressBandwidth, config.egressBandwidth, err = getBandwidth(pod)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return config, pod, nil
-}
 
 // For a given container, returns host veth name, container veth MAC, and pod IP
 func getVethInfo(netns, containerIfname string) (string, string, string, error) {
@@ -159,12 +81,26 @@ func getVethInfo(netns, containerIfname string) (string, string, string, error) 
 	return hostVeth.Attrs().Name, contVeth.Attrs().HardwareAddr.String(), podIP, nil
 }
 
-// Adds a macvlan interface to a container for use with the egress router feature
-func addMacvlan(netns string) error {
-	var defIface netlink.Link
-	var err error
+// Adds a macvlan interface to a container, if requested, for use with the egress router feature
+func maybeAddMacvlan(pod *kapi.Pod, netns string) error {
+	val, ok := pod.Annotations[sdnapi.AssignMacvlanAnnotation]
+	if !ok || val != "true" {
+		return nil
+	}
+
+	privileged := false
+	for _, container := range append(pod.Spec.Containers, pod.Spec.InitContainers...) {
+		if container.SecurityContext != nil && container.SecurityContext.Privileged != nil && *container.SecurityContext.Privileged {
+			privileged = true
+			break
+		}
+	}
+	if !privileged {
+		return fmt.Errorf("pod has %q annotation but is not privileged", sdnapi.AssignMacvlanAnnotation)
+	}
 
 	// Find interface with the default route
+	var defIface netlink.Link
 	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
 	if err != nil {
 		return fmt.Errorf("failed to read routes: %v", err)
@@ -252,20 +188,30 @@ func (m *podManager) ipamDel(id string) error {
 	return nil
 }
 
-func isScriptError(err error) bool {
-	_, ok := err.(*exec.ExitError)
-	return ok
-}
+func setupPodBandwidth(ovs *ovsController, pod *kapi.Pod, hostVeth string) error {
+	ingressVal, egressVal, err := kbandwidth.ExtractPodBandwidthResources(pod.Annotations)
+	if err != nil {
+		return fmt.Errorf("failed to parse pod bandwidth: %v", err)
+	}
 
-// Get the last command (which is prefixed with "+" because of "set -x") and its output
-func getScriptError(output []byte) string {
-	lines := strings.Split(string(output), "\n")
-	for n := len(lines) - 1; n >= 0; n-- {
-		if strings.HasPrefix(lines[n], "+") {
-			return strings.Join(lines[n:], "\n")
+	ingressBPS := int64(-1)
+	egressBPS := int64(-1)
+	if ingressVal != nil {
+		ingressBPS = ingressVal.Value()
+
+		// FIXME: doesn't seem possible to do this with the netlink library?
+		itx := ipcmd.NewTransaction(kexec.New(), hostVeth)
+		itx.SetLink("qlen", "1000")
+		err = itx.EndTransaction()
+		if err != nil {
+			return err
 		}
 	}
-	return string(output)
+	if egressVal != nil {
+		egressBPS = egressVal.Value()
+	}
+
+	return ovs.SetPodBandwidth(hostVeth, ingressBPS, egressBPS)
 }
 
 func vnidToString(vnid uint32) string {
@@ -282,102 +228,16 @@ func podIsExited(p *kcontainer.Pod) bool {
 	return true
 }
 
-// getNonExitedPods returns a list of pods that have at least one running container.
-func (m *podManager) getNonExitedPods() ([]*kcontainer.Pod, error) {
-	ret := []*kcontainer.Pod{}
-	pods, err := m.host.GetRuntime().GetPods(true)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to retrieve pods from runtime: %v", err)
-	}
-	for _, p := range pods {
-		if podIsExited(p) {
-			continue
-		}
-		ret = append(ret, p)
-	}
-	return ret, nil
-}
-
-// ipamGarbageCollection will release unused IPs from dead containers that
-// the CNI plugin was never notified had died.  openshift-sdn uses the CNI
-// host-local IPAM plugin, which stores allocated IPs in a file in
-// /var/lib/cni/network. Each file in this directory has as its name the
-// allocated IP address of the container, and as its contents the container ID.
-// This routine looks for container IDs that are not reported as running by the
-// container runtime, and releases each one's IPAM allocation.
-func (m *podManager) ipamGarbageCollection() {
-	glog.V(2).Infof("Starting IP garbage collection")
-
-	const ipamDir string = "/var/lib/cni/networks/openshift-sdn"
-	files, err := ioutil.ReadDir(ipamDir)
-	if err != nil {
-		glog.Errorf("Failed to list files in CNI host-local IPAM store %v: %v", ipamDir, err)
-		return
-	}
-
-	// gather containerIDs for allocated ips
-	ipContainerIdMap := make(map[string]string)
-	for _, file := range files {
-		// skip non checkpoint file
-		if ip := net.ParseIP(file.Name()); ip == nil {
-			continue
-		}
-
-		content, err := ioutil.ReadFile(filepath.Join(ipamDir, file.Name()))
-		if err != nil {
-			glog.Errorf("Failed to read file %v: %v", file, err)
-		}
-		ipContainerIdMap[file.Name()] = strings.TrimSpace(string(content))
-	}
-
-	// gather infra container IDs of current running Pods
-	runningContainerIDs := ksets.String{}
-	pods, err := m.getNonExitedPods()
-	if err != nil {
-		glog.Errorf("Failed to get pods: %v", err)
-		return
-	}
-	for _, pod := range pods {
-		containerID, err := m.host.GetRuntime().GetPodContainerID(pod)
-		if err != nil {
-			glog.Warningf("Failed to get infra containerID of %q/%q: %v", pod.Namespace, pod.Name, err)
-			continue
-		}
-
-		runningContainerIDs.Insert(strings.TrimSpace(containerID.ID))
-	}
-
-	// release leaked ips
-	for ip, containerID := range ipContainerIdMap {
-		// if the container is not running, release IP
-		if runningContainerIDs.Has(containerID) {
-			continue
-		}
-
-		glog.V(2).Infof("Releasing IP %q allocated to %q.", ip, containerID)
-		m.ipamDel(containerID)
-	}
-}
-
 // Set up all networking (host/container veth, OVS flows, IPAM, loopback, etc)
 func (m *podManager) setup(req *cniserver.PodRequest) (*cnitypes.Result, *runningPod, error) {
-	podConfig, pod, err := m.getPodConfig(req)
+	pod, err := m.kClient.Core().Pods(req.PodNamespace).Get(req.PodName, metav1.GetOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	ipamResult, err := m.ipamAdd(req.Netns, req.ContainerId)
+	ipamResult, err := m.ipamAdd(req.Netns, req.SandboxID)
 	if err != nil {
-		// TODO: Remove this hack once we've figured out how to retrieve the netns
-		// of an exited container. Currently, restarting docker will leak a bunch of
-		// ips. This will exhaust available ip space unless we cleanup old ips. At the
-		// same time we don't want to try GC'ing them periodically as that could lead
-		// to a performance regression in starting pods. So on each setup failure, try
-		// GC on the assumption that the kubelet is going to retry pod creation, and
-		// when it does, there will be ips.
-		m.ipamGarbageCollection()
-
-		return nil, nil, fmt.Errorf("failed to run IPAM for %v: %v", req.ContainerId, err)
+		return nil, nil, fmt.Errorf("failed to run IPAM for %v: %v", req.SandboxID, err)
 	}
 	podIP := ipamResult.IP4.IP.IP
 
@@ -385,31 +245,38 @@ func (m *podManager) setup(req *cniserver.PodRequest) (*cnitypes.Result, *runnin
 	var success bool
 	defer func() {
 		if !success {
-			m.ipamDel(req.ContainerId)
-			if err := m.hostportHandler.SyncHostports(TUN, m.getRunningPods()); err != nil {
+			m.ipamDel(req.SandboxID)
+			if err := m.hostportSyncer.SyncHostports(TUN, m.getRunningPods()); err != nil {
 				glog.Warningf("failed syncing hostports: %v", err)
 			}
 		}
 	}()
 
 	// Open any hostports the pod wants
-	newPod := &kubehostport.ActivePod{Pod: pod, IP: podIP}
-	if err := m.hostportHandler.OpenPodHostportsAndSync(newPod, TUN, m.getRunningPods()); err != nil {
+	var v1Pod kapiv1.Pod
+	if err := kapiv1.Convert_api_Pod_To_v1_Pod(pod, &v1Pod, nil); err != nil {
+		return nil, nil, err
+	}
+	podPortMapping := hostport.ConstructPodPortMapping(&v1Pod, podIP)
+	if err := m.hostportSyncer.OpenPodHostportsAndSync(podPortMapping, TUN, m.getRunningPods()); err != nil {
 		return nil, nil, err
 	}
 
-	var hostVeth, contVeth netlink.Link
+	var hostVethName, contVethMac string
 	err = ns.WithNetNSPath(req.Netns, func(hostNS ns.NetNS) error {
-		hostVeth, contVeth, err = ip.SetupVeth(podInterfaceName, int(m.mtu), hostNS)
+		hostVeth, contVeth, err := ip.SetupVeth(podInterfaceName, int(m.mtu), hostNS)
 		if err != nil {
 			return fmt.Errorf("failed to create container veth: %v", err)
+		}
+		// Force a consistent MAC address based on the IP address
+		if err := ip.SetHWAddrByIP(podInterfaceName, podIP, nil); err != nil {
+			return fmt.Errorf("failed to set pod interface MAC address: %v", err)
 		}
 		// refetch to get hardware address and other properties
 		contVeth, err = netlink.LinkByIndex(contVeth.Attrs().Index)
 		if err != nil {
 			return fmt.Errorf("failed to fetch container veth: %v", err)
 		}
-
 		// Clear out gateway to prevent ConfigureIface from adding the cluster
 		// subnet via the gateway
 		ipamResult.IP4.Gateway = nil
@@ -424,85 +291,54 @@ func (m *podManager) setup(req *cniserver.PodRequest) (*cnitypes.Result, *runnin
 		if err != nil {
 			return fmt.Errorf("failed to configure container loopback: %v", err)
 		}
+
+		hostVethName = hostVeth.Attrs().Name
+		contVethMac = contVeth.Attrs().HardwareAddr.String()
 		return nil
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if podConfig.wantMacvlan {
-		if err := addMacvlan(req.Netns); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	contVethMac := contVeth.Attrs().HardwareAddr.String()
-	vnidStr := vnidToString(podConfig.vnid)
-	out, err := exec.Command(sdnScript, setUpCmd, hostVeth.Attrs().Name, contVethMac, podIP.String(), vnidStr, podConfig.ingressBandwidth, podConfig.egressBandwidth).CombinedOutput()
-	glog.V(5).Infof("SetUpPod network plugin output: %s, %v", string(out), err)
-
-	if isScriptError(err) {
-		return nil, nil, fmt.Errorf("error running network setup script:\nhostVethName %s, contVethMac %s, podIP %s, podConfig %#v\n %s", hostVeth.Attrs().Name, contVethMac, podIP.String(), podConfig, getScriptError(out))
-	} else if err != nil {
-		return nil, nil, err
-	}
-
-	ofport, err := m.ovs.GetOFPort(hostVeth.Attrs().Name)
+	vnid, err := m.policy.GetVNID(req.PodNamespace)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	m.policy.RefVNID(podConfig.vnid)
-	success = true
-	return ipamResult, &runningPod{activePod: newPod, vnid: podConfig.vnid, ofport: ofport}, nil
-}
-
-func (m *podManager) getContainerNetnsPath(id string) (string, error) {
-	runtime, ok := m.host.GetRuntime().(*dockertools.DockerManager)
-	if !ok {
-		return "", fmt.Errorf("openshift-sdn execution called on non-docker runtime")
+	if err := maybeAddMacvlan(pod, req.Netns); err != nil {
+		return nil, nil, err
 	}
-	return runtime.GetNetNS(kcontainer.DockerID(id).ContainerID())
+
+	ofport, err := m.ovs.SetUpPod(hostVethName, podIP.String(), contVethMac, req.SandboxID, vnid)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := setupPodBandwidth(m.ovs, pod, hostVethName); err != nil {
+		return nil, nil, err
+	}
+
+	m.policy.EnsureVNIDRules(vnid)
+	success = true
+	return ipamResult, &runningPod{podPortMapping: podPortMapping, vnid: vnid, ofport: ofport}, nil
 }
 
 // Update OVS flows when something (like the pod's namespace VNID) changes
 func (m *podManager) update(req *cniserver.PodRequest) (uint32, error) {
-	// Updates may come at startup and thus we may not have the pod's
-	// netns from kubelet (since kubelet doesn't have UPDATE actions).
-	// Read the missing netns from the pod's file.
-	if req.Netns == "" {
-		netns, err := m.getContainerNetnsPath(req.ContainerId)
-		if err != nil {
-			return 0, err
-		}
-		req.Netns = netns
-	}
-
-	podConfig, _, err := m.getPodConfig(req)
+	vnid, err := m.policy.GetVNID(req.PodNamespace)
 	if err != nil {
 		return 0, err
 	}
 
-	hostVethName, contVethMac, podIP, err := getVethInfo(req.Netns, podInterfaceName)
-	if err != nil {
+	if err := m.ovs.UpdatePod(req.SandboxID, vnid); err != nil {
 		return 0, err
 	}
-
-	vnidStr := vnidToString(podConfig.vnid)
-	out, err := exec.Command(sdnScript, updateCmd, hostVethName, contVethMac, podIP, vnidStr, podConfig.ingressBandwidth, podConfig.egressBandwidth).CombinedOutput()
-	glog.V(5).Infof("UpdatePod network plugin output: %s, %v", string(out), err)
-
-	if isScriptError(err) {
-		return 0, fmt.Errorf("error running network update script: %s", getScriptError(out))
-	} else if err != nil {
-		return 0, err
-	}
-
-	return podConfig.vnid, nil
+	return vnid, nil
 }
 
 // Clean up all pod networking (clear OVS flows, release IPAM lease, remove host/container veth)
 func (m *podManager) teardown(req *cniserver.PodRequest) error {
+	errList := []error{}
+
 	netnsValid := true
 	if err := ns.IsNSorErr(req.Netns); err != nil {
 		if _, ok := err.(ns.NSPathNotExistErr); ok {
@@ -512,33 +348,23 @@ func (m *podManager) teardown(req *cniserver.PodRequest) error {
 	}
 
 	if netnsValid {
-		hostVethName, contVethMac, podIP, err := getVethInfo(req.Netns, podInterfaceName)
+		hostVethName, _, podIP, err := getVethInfo(req.Netns, podInterfaceName)
 		if err != nil {
 			return err
 		}
 
-		// The script's teardown functionality doesn't need the VNID
-		out, err := exec.Command(sdnScript, tearDownCmd, hostVethName, contVethMac, podIP, "-1").CombinedOutput()
-		glog.V(5).Infof("TearDownPod network plugin output: %s, %v", string(out), err)
-
-		if isScriptError(err) {
-			return fmt.Errorf("error running network teardown script: %s", getScriptError(out))
-		} else if err != nil {
-			return err
-		}
-
-		if vnid, err := m.policy.GetVNID(req.PodNamespace); err == nil {
-			m.policy.UnrefVNID(vnid)
+		if err := m.ovs.TearDownPod(hostVethName, podIP); err != nil {
+			errList = append(errList, err)
 		}
 	}
 
-	if err := m.ipamDel(req.ContainerId); err != nil {
-		return err
+	if err := m.ipamDel(req.SandboxID); err != nil {
+		errList = append(errList, err)
 	}
 
-	if err := m.hostportHandler.SyncHostports(TUN, m.getRunningPods()); err != nil {
-		return err
+	if err := m.hostportSyncer.SyncHostports(TUN, m.getRunningPods()); err != nil {
+		errList = append(errList, err)
 	}
 
-	return nil
+	return kerrors.NewAggregate(errList)
 }

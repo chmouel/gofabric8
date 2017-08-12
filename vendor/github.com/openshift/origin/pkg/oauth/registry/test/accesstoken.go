@@ -1,31 +1,33 @@
 package test
 
 import (
-	kapi "k8s.io/kubernetes/pkg/api"
+	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 
-	"github.com/openshift/origin/pkg/oauth/api"
+	oauthapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
 )
 
 type AccessTokenRegistry struct {
 	Err                    error
-	AccessTokens           *api.OAuthAccessTokenList
-	AccessToken            *api.OAuthAccessToken
+	AccessTokens           *oauthapi.OAuthAccessTokenList
+	AccessToken            *oauthapi.OAuthAccessToken
 	DeletedAccessTokenName string
 }
 
-func (r *AccessTokenRegistry) ListAccessTokens(ctx kapi.Context, options *kapi.ListOptions) (*api.OAuthAccessTokenList, error) {
+func (r *AccessTokenRegistry) ListAccessTokens(ctx apirequest.Context, options *metainternal.ListOptions) (*oauthapi.OAuthAccessTokenList, error) {
 	return r.AccessTokens, r.Err
 }
 
-func (r *AccessTokenRegistry) GetAccessToken(ctx kapi.Context, name string) (*api.OAuthAccessToken, error) {
+func (r *AccessTokenRegistry) GetAccessToken(ctx apirequest.Context, name string, options *metav1.GetOptions) (*oauthapi.OAuthAccessToken, error) {
 	return r.AccessToken, r.Err
 }
 
-func (r *AccessTokenRegistry) CreateAccessToken(ctx kapi.Context, token *api.OAuthAccessToken) (*api.OAuthAccessToken, error) {
+func (r *AccessTokenRegistry) CreateAccessToken(ctx apirequest.Context, token *oauthapi.OAuthAccessToken) (*oauthapi.OAuthAccessToken, error) {
 	return r.AccessToken, r.Err
 }
 
-func (r *AccessTokenRegistry) DeleteAccessToken(ctx kapi.Context, name string) error {
+func (r *AccessTokenRegistry) DeleteAccessToken(ctx apirequest.Context, name string) error {
 	r.DeletedAccessTokenName = name
 	return r.Err
 }

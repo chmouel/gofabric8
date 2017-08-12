@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"fmt"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kapi "k8s.io/kubernetes/pkg/api"
-	kerrors "k8s.io/kubernetes/pkg/util/errors"
 
 	"github.com/openshift/origin/pkg/bootstrap/docker/errors"
-	"github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
-	configcmd "github.com/openshift/origin/pkg/config/cmd"
-	genappcmd "github.com/openshift/origin/pkg/generate/app/cmd"
 )
 
 const (
@@ -19,34 +16,43 @@ const (
 	svcKibana                      = "kibana-logging"
 	loggingDeployerAccountTemplate = "logging-deployer-account-template"
 	loggingDeployerTemplate        = "logging-deployer-template"
+	loggingPlaybook                = "playbooks/byo/openshift-cluster/openshift-logging.yml"
 )
 
-func instantiateTemplate(client client.Interface, mapper configcmd.Mapper, templateNamespace, templateName, targetNamespace string, params map[string]string) error {
-	template, err := client.Templates(templateNamespace).Get(templateName)
+// InstallLoggingViaAnsible checks whether logging is installed and installs it if not already installed
+func (h *Helper) InstallLoggingViaAnsible(f *clientcmd.Factory, serverIP, publicHostname, loggerHost, imagePrefix, imageVersion, hostConfigDir, imageStreams string) error {
+	_, kubeClient, err := f.Clients()
 	if err != nil {
-		return errors.NewError("cannot retrieve template %q from namespace %q", templateName, templateNamespace).WithCause(err)
+		return errors.NewError("cannot obtain API clients").WithCause(err).WithDetails(h.OriginLog())
 	}
 
-	// process the template
-	result, err := genappcmd.TransformTemplate(template, client, targetNamespace, params)
+	_, err = kubeClient.Core().Namespaces().Get(loggingNamespace, metav1.GetOptions{})
+	if err == nil {
+		// If there's no error, the logging namespace already exists and we won't initialize it
+		return nil
+	}
+
+	// Create logging namespace
+	out := &bytes.Buffer{}
+	err = CreateProject(f, loggingNamespace, "", "", "oc", out)
 	if err != nil {
-		return errors.NewError("cannot process template %s/%s", templateNamespace, templateName).WithCause(err)
+		return errors.NewError("cannot create logging project").WithCause(err).WithDetails(out.String())
 	}
 
-	// Create objects
-	bulk := &configcmd.Bulk{
-		Mapper: mapper,
-		Op:     configcmd.Create,
-	}
-	itemsToCreate := &kapi.List{
-		Items: result.Objects,
-	}
-	if errs := bulk.Run(itemsToCreate, targetNamespace); len(errs) > 0 {
-		err = kerrors.NewAggregate(errs)
-		return errors.NewError("cannot create objects from template %s/%s", templateNamespace, templateName).WithCause(err)
-	}
+	params := newAnsibleInventoryParams()
+	params.Template = defaultLoggingInventory
+	params.MasterIP = serverIP
+	params.MasterPublicURL = fmt.Sprintf("https://%s:8443", publicHostname)
+	params.OSERelease = imageVersion
+	params.LoggingImagePrefix = fmt.Sprintf("%s-", imagePrefix)
+	params.LoggingImageVersion = imageVersion
+	params.LoggingNamespace = loggingNamespace
+	params.KibanaHostName = loggerHost
 
-	return nil
+	runner := newAnsibleRunner(h, kubeClient, loggingNamespace, imageStreams, "logging")
+
+	//run logging playbook
+	return runner.RunPlaybook(params, loggingPlaybook, hostConfigDir, imagePrefix, imageVersion)
 }
 
 // InstallLogging checks whether logging is installed and installs it if not already installed
@@ -56,7 +62,7 @@ func (h *Helper) InstallLogging(f *clientcmd.Factory, publicHostname, loggerHost
 		return errors.NewError("cannot obtain API clients").WithCause(err).WithDetails(h.OriginLog())
 	}
 
-	_, err = kubeClient.Core().Namespaces().Get(loggingNamespace)
+	_, err = kubeClient.Core().Namespaces().Get(loggingNamespace, metav1.GetOptions{})
 	if err == nil {
 		// If there's no error, the logging namespace already exists and we won't initialize it
 		return nil
@@ -70,7 +76,7 @@ func (h *Helper) InstallLogging(f *clientcmd.Factory, publicHostname, loggerHost
 	}
 
 	// Instantiate logging deployer account template
-	err = instantiateTemplate(osClient, clientcmd.ResourceMapper(f), "openshift", loggingDeployerAccountTemplate, loggingNamespace, nil)
+	err = instantiateTemplate(osClient, clientcmd.ResourceMapper(f), OpenshiftInfraNamespace, loggingDeployerAccountTemplate, loggingNamespace, nil)
 	if err != nil {
 		return errors.NewError("cannot instantiate logger accounts").WithCause(err)
 	}
@@ -91,7 +97,7 @@ func (h *Helper) InstallLogging(f *clientcmd.Factory, publicHostname, loggerHost
 	}
 
 	// Label all nodes with default fluentd label
-	nodeList, err := kubeClient.Core().Nodes().List(kapi.ListOptions{})
+	nodeList, err := kubeClient.Core().Nodes().List(metav1.ListOptions{})
 	if err != nil {
 		return errors.NewError("cannot retrieve nodes").WithCause(err).WithDetails(h.OriginLog())
 	}
@@ -122,7 +128,7 @@ func (h *Helper) InstallLogging(f *clientcmd.Factory, publicHostname, loggerHost
 		"IMAGE_PREFIX":  fmt.Sprintf("%s-", imagePrefix),
 		"MODE":          "install",
 	}
-	err = instantiateTemplate(osClient, clientcmd.ResourceMapper(f), "openshift", loggingDeployerTemplate, loggingNamespace, deployerParams)
+	err = instantiateTemplate(osClient, clientcmd.ResourceMapper(f), OpenshiftInfraNamespace, loggingDeployerTemplate, loggingNamespace, deployerParams)
 	if err != nil {
 		return errors.NewError("cannot instantiate logging deployer").WithCause(err)
 	}
@@ -133,5 +139,5 @@ func LoggingHost(routingSuffix, serverIP string) string {
 	if len(routingSuffix) > 0 {
 		return fmt.Sprintf("kibana-logging.%s", routingSuffix)
 	}
-	return fmt.Sprintf("kibana-logging.%s.xip.io", serverIP)
+	return fmt.Sprintf("kibana-logging.%s.nip.io", serverIP)
 }

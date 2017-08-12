@@ -24,8 +24,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	restclient "k8s.io/client-go/rest"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	"k8s.io/kubernetes/pkg/client/restclient"
 )
 
 func TestGetEnviron(t *testing.T) {

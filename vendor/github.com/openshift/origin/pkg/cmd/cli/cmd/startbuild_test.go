@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/kubernetes/pkg/apimachinery/registered"
-	"k8s.io/kubernetes/pkg/client/restclient"
-	kclientcmd "k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
-	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
+	restclient "k8s.io/client-go/rest"
+	kclientcmd "k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	kapi "k8s.io/kubernetes/pkg/api"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/client/testclient"
 )
@@ -64,7 +64,7 @@ func TestStartBuildWebHook(t *testing.T) {
 		Out:          buf,
 		ClientConfig: cfg,
 		FromWebhook:  server.URL + "/webhook",
-		Mapper:       registered.RESTMapper(),
+		Mapper:       kapi.Registry.RESTMapper(),
 	}
 	if err := o.Run(); err != nil {
 		t.Fatalf("unable to start hook: %v", err)
@@ -98,7 +98,7 @@ func TestStartBuildWebHookHTTPS(t *testing.T) {
 		Out:          buf,
 		ClientConfig: cfg,
 		FromWebhook:  server.URL + "/webhook",
-		Mapper:       registered.RESTMapper(),
+		Mapper:       kapi.Registry.RESTMapper(),
 	}
 	if err := o.Run(); err == nil || !strings.Contains(err.Error(), "certificate signed by unknown authority") {
 		t.Fatalf("unexpected non-error: %v", err)
@@ -134,7 +134,7 @@ func TestStartBuildHookPostReceive(t *testing.T) {
 		ClientConfig:   cfg,
 		FromWebhook:    server.URL + "/webhook",
 		GitPostReceive: f.Name(),
-		Mapper:         registered.RESTMapper(),
+		Mapper:         kapi.Registry.RESTMapper(),
 	}
 	if err := o.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)

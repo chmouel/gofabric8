@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/util/sets"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/sets"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 )
 
 func TestUserEvaluator(t *testing.T) {
@@ -117,7 +118,7 @@ func TestClusterRoleEvaluator(t *testing.T) {
 			name: "missing-role",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{}},
 				},
 			},
@@ -129,7 +130,7 @@ func TestClusterRoleEvaluator(t *testing.T) {
 			name: "mismatched-namespace",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{}},
 				},
 			},
@@ -141,7 +142,7 @@ func TestClusterRoleEvaluator(t *testing.T) {
 			name: "all-namespaces",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{}},
 				},
 			},
@@ -153,7 +154,7 @@ func TestClusterRoleEvaluator(t *testing.T) {
 			name: "matching-namespaces",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{}},
 				},
 			},
@@ -165,7 +166,7 @@ func TestClusterRoleEvaluator(t *testing.T) {
 			name: "colon-role",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin:two"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin:two"},
 					Rules:      []authorizationapi.PolicyRule{{}},
 				},
 			},
@@ -216,7 +217,7 @@ func TestEscalationProtection(t *testing.T) {
 			name: "simple match secrets",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{APIGroups: []string{""}, Resources: sets.NewString("pods", "secrets")}},
 				},
 			},
@@ -227,7 +228,7 @@ func TestEscalationProtection(t *testing.T) {
 			name: "match old group secrets",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{APIGroups: []string{}, Resources: sets.NewString("pods", "secrets")}},
 				},
 			},
@@ -238,7 +239,7 @@ func TestEscalationProtection(t *testing.T) {
 			name: "skip non-matching group secrets",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{APIGroups: []string{"foo"}, Resources: sets.NewString("pods", "secrets")}},
 				},
 			},
@@ -249,7 +250,7 @@ func TestEscalationProtection(t *testing.T) {
 			name: "access tokens",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{APIGroups: []string{"", "and-foo"}, Resources: sets.NewString("pods", "oauthaccesstokens")}},
 				},
 			},
@@ -260,7 +261,7 @@ func TestEscalationProtection(t *testing.T) {
 			name: "allow the escalation",
 			clusterRoles: []authorizationapi.ClusterRole{
 				{
-					ObjectMeta: kapi.ObjectMeta{Name: "admin"},
+					ObjectMeta: metav1.ObjectMeta{Name: "admin"},
 					Rules:      []authorizationapi.PolicyRule{{APIGroups: []string{""}, Resources: sets.NewString("pods", "secrets")}},
 				},
 			},
@@ -286,15 +287,13 @@ type fakePolicyGetter struct {
 	err          error
 }
 
-func (f *fakePolicyGetter) List(kapi.ListOptions) (*authorizationapi.ClusterPolicyList, error) {
+func (f *fakePolicyGetter) List(label labels.Selector) ([]*authorizationapi.ClusterPolicy, error) {
 	policy, err := f.Get("")
 	if err != nil {
 		return nil, err
 	}
 
-	ret := &authorizationapi.ClusterPolicyList{}
-	ret.Items = append(ret.Items, *policy)
-	return ret, f.err
+	return []*authorizationapi.ClusterPolicy{policy}, f.err
 }
 
 func (f *fakePolicyGetter) Get(id string) (*authorizationapi.ClusterPolicy, error) {

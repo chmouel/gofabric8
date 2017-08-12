@@ -9,32 +9,35 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/emicklei/go-restful/swagger"
-	"github.com/spf13/cobra"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	restclient "k8s.io/client-go/rest"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/meta"
-	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/api/validation"
-	"k8s.io/kubernetes/pkg/client/restclient"
-	"k8s.io/kubernetes/pkg/client/typed/dynamic"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/kubectl"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/labels"
-	"k8s.io/kubernetes/pkg/runtime"
+	kprinters "k8s.io/kubernetes/pkg/printers"
 
 	"github.com/openshift/origin/pkg/api/latest"
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	authorizationreaper "github.com/openshift/origin/pkg/authorization/reaper"
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	buildcmd "github.com/openshift/origin/pkg/build/cmd"
 	buildutil "github.com/openshift/origin/pkg/build/util"
 	"github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/cli/describe"
-	deployapi "github.com/openshift/origin/pkg/deploy/api"
+	deployapi "github.com/openshift/origin/pkg/deploy/apis/apps"
 	deploycmd "github.com/openshift/origin/pkg/deploy/cmd"
-	userapi "github.com/openshift/origin/pkg/user/api"
+	"github.com/openshift/origin/pkg/security/legacyclient"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
 	authenticationreaper "github.com/openshift/origin/pkg/user/reaper"
 )
 
@@ -99,8 +102,13 @@ func (f *ring1Factory) UnstructuredClientForMapping(mapping *meta.RESTMapping) (
 	return f.kubeObjectMappingFactory.UnstructuredClientForMapping(mapping)
 }
 
-func (f *ring1Factory) Describer(mapping *meta.RESTMapping) (kubectl.Describer, error) {
-	if latest.OriginKind(mapping.GroupVersionKind) {
+func (f *ring1Factory) Describer(mapping *meta.RESTMapping) (kprinters.Describer, error) {
+	// TODO we need to refactor the describer logic to handle misses or run serverside.
+	// for now we can special case our "sometimes origin, sometimes kube" resource
+	// I think it is correct for more code if this is NOT considered an origin type since
+	// it wasn't an origin type pre 3.6.
+	isSCC := mapping.GroupVersionKind.Kind == "SecurityContextConstraints"
+	if latest.OriginKind(mapping.GroupVersionKind) || isSCC {
 		oClient, kClient, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, fmt.Errorf("unable to create client %s: %v", mapping.GroupVersionKind.Kind, err)
@@ -155,7 +163,7 @@ func (f *ring1Factory) LogsForObject(object, options runtime.Object) (*restclien
 		if err != nil {
 			return nil, err
 		}
-		builds, err := oc.Builds(t.Namespace).List(kapi.ListOptions{})
+		builds, err := oc.Builds(t.Namespace).List(metav1.ListOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -176,7 +184,7 @@ func (f *ring1Factory) LogsForObject(object, options runtime.Object) (*restclien
 }
 
 func (f *ring1Factory) Scaler(mapping *meta.RESTMapping) (kubectl.Scaler, error) {
-	if mapping.GroupVersionKind.GroupKind() == deployapi.Kind("DeploymentConfig") {
+	if deployapi.IsKindOrLegacy("DeploymentConfig", mapping.GroupVersionKind.GroupKind()) {
 		oc, kc, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
@@ -187,26 +195,27 @@ func (f *ring1Factory) Scaler(mapping *meta.RESTMapping) (kubectl.Scaler, error)
 }
 
 func (f *ring1Factory) Reaper(mapping *meta.RESTMapping) (kubectl.Reaper, error) {
-	switch mapping.GroupVersionKind.GroupKind() {
-	case deployapi.Kind("DeploymentConfig"):
+	gk := mapping.GroupVersionKind.GroupKind()
+	switch {
+	case deployapi.IsKindOrLegacy("DeploymentConfig", gk):
 		oc, kc, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
 		}
 		return deploycmd.NewDeploymentConfigReaper(oc, kc), nil
-	case authorizationapi.Kind("Role"):
+	case authorizationapi.IsKindOrLegacy("Role", gk):
 		oc, _, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
 		}
 		return authorizationreaper.NewRoleReaper(oc, oc), nil
-	case authorizationapi.Kind("ClusterRole"):
+	case authorizationapi.IsKindOrLegacy("ClusterRole", gk):
 		oc, _, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
 		}
 		return authorizationreaper.NewClusterRoleReaper(oc, oc, oc), nil
-	case userapi.Kind("User"):
+	case userapi.IsKindOrLegacy("User", gk):
 		oc, kc, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
@@ -217,9 +226,9 @@ func (f *ring1Factory) Reaper(mapping *meta.RESTMapping) (kubectl.Reaper, error)
 			client.ClusterRoleBindingsInterface(oc),
 			client.RoleBindingsNamespacer(oc),
 			client.OAuthClientAuthorizationsInterface(oc),
-			kc.Core(),
+			legacyclient.NewFromClient(kc.Core().RESTClient()),
 		), nil
-	case userapi.Kind("Group"):
+	case userapi.IsKindOrLegacy("Group", gk):
 		oc, kc, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
@@ -228,9 +237,9 @@ func (f *ring1Factory) Reaper(mapping *meta.RESTMapping) (kubectl.Reaper, error)
 			client.GroupsInterface(oc),
 			client.ClusterRoleBindingsInterface(oc),
 			client.RoleBindingsNamespacer(oc),
-			kc.Core(),
+			legacyclient.NewFromClient(kc.Core().RESTClient()),
 		), nil
-	case buildapi.Kind("BuildConfig"):
+	case buildapi.IsKindOrLegacy("BuildConfig", gk):
 		oc, _, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
@@ -241,8 +250,7 @@ func (f *ring1Factory) Reaper(mapping *meta.RESTMapping) (kubectl.Reaper, error)
 }
 
 func (f *ring1Factory) HistoryViewer(mapping *meta.RESTMapping) (kubectl.HistoryViewer, error) {
-	switch mapping.GroupVersionKind.GroupKind() {
-	case deployapi.Kind("DeploymentConfig"):
+	if deployapi.IsKindOrLegacy("DeploymentConfig", mapping.GroupVersionKind.GroupKind()) {
 		oc, kc, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
@@ -253,8 +261,7 @@ func (f *ring1Factory) HistoryViewer(mapping *meta.RESTMapping) (kubectl.History
 }
 
 func (f *ring1Factory) Rollbacker(mapping *meta.RESTMapping) (kubectl.Rollbacker, error) {
-	switch mapping.GroupVersionKind.GroupKind() {
-	case deployapi.Kind("DeploymentConfig"):
+	if deployapi.IsKindOrLegacy("DeploymentConfig", mapping.GroupVersionKind.GroupKind()) {
 		oc, _, err := f.clientAccessFactory.Clients()
 		if err != nil {
 			return nil, err
@@ -270,8 +277,7 @@ func (f *ring1Factory) StatusViewer(mapping *meta.RESTMapping) (kubectl.StatusVi
 		return nil, err
 	}
 
-	switch mapping.GroupVersionKind.GroupKind() {
-	case deployapi.Kind("DeploymentConfig"):
+	if deployapi.IsKindOrLegacy("DeploymentConfig", mapping.GroupVersionKind.GroupKind()) {
 		return deploycmd.NewDeploymentConfigStatusViewer(oc), nil
 	}
 	return f.kubeObjectMappingFactory.StatusViewer(mapping)
@@ -285,7 +291,7 @@ func (f *ring1Factory) AttachablePodForObject(object runtime.Object) (*kapi.Pod,
 			return nil, err
 		}
 		selector := labels.SelectorFromSet(t.Spec.Selector)
-		f := func(pods []*kapi.Pod) sort.Interface { return sort.Reverse(controller.ActivePods(pods)) }
+		f := func(pods []*v1.Pod) sort.Interface { return sort.Reverse(controller.ActivePods(pods)) }
 		pod, _, err := kcmdutil.GetFirstPod(kc.Core(), t.Namespace, selector, 1*time.Minute, f)
 		return pod, err
 	default:
@@ -293,52 +299,11 @@ func (f *ring1Factory) AttachablePodForObject(object runtime.Object) (*kapi.Pod,
 	}
 }
 
-// PrinterForMapping returns a printer suitable for displaying the provided resource type.
-// Requires that printer flags have been added to cmd (see AddPrinterFlags).
-func (f *ring1Factory) PrinterForMapping(cmd *cobra.Command, mapping *meta.RESTMapping, withNamespace bool) (kubectl.ResourcePrinter, error) {
-	/*
-		// TODO FIX ME. COPIED FROM KUBE AS PART OF THE COPY/PASTE FOR
-		// PrinterForMapping
-		if latest.OriginKind(mapping.GroupVersionKind) {
-			printer, ok, err := kcmdutil.PrinterForCommand(cmd)
-			if err != nil {
-				return nil, err
-			}
-			if ok && mapping != nil {
-				printer = kubectl.NewVersionedPrinter(printer, mapping.ObjectConvertor, mapping.GroupVersionKind.GroupVersion())
-			} else {
-				// Some callers do not have "label-columns" so we can't use the GetFlagStringSlice() helper
-				columnLabel, err := cmd.Flags().GetStringSlice("label-columns")
-				if err != nil {
-					columnLabel = []string{}
-				}
-				printer, err = f.Printer(mapping, kubectl.PrintOptions{
-					NoHeaders:          kcmdutil.GetFlagBool(cmd, "no-headers"),
-					WithNamespace:      withNamespace,
-					Wide:               kcmdutil.GetWideFlag(cmd),
-					ShowAll:            kcmdutil.GetFlagBool(cmd, "show-all"),
-					ShowLabels:         kcmdutil.GetFlagBool(cmd, "show-labels"),
-					AbsoluteTimestamps: isWatch(cmd),
-					ColumnLabels:       columnLabel,
-				})
-				if err != nil {
-					return nil, err
-				}
-				printer = maybeWrapSortingPrinter(cmd, printer)
-			}
-
-			return printer, nil
-		}
-	*/
-
-	return f.kubeObjectMappingFactory.PrinterForMapping(cmd, mapping, withNamespace)
-}
-
 func (f *ring1Factory) Validator(validate bool, cacheDir string) (validation.Schema, error) {
 	return f.kubeObjectMappingFactory.Validator(validate, cacheDir)
 }
 
-func (f *ring1Factory) SwaggerSchema(gvk unversioned.GroupVersionKind) (*swagger.ApiDeclaration, error) {
+func (f *ring1Factory) SwaggerSchema(gvk schema.GroupVersionKind) (*swagger.ApiDeclaration, error) {
 	if !latest.OriginKind(gvk) {
 		return f.kubeObjectMappingFactory.SwaggerSchema(gvk)
 	}
@@ -352,7 +317,7 @@ func (f *ring1Factory) SwaggerSchema(gvk unversioned.GroupVersionKind) (*swagger
 }
 
 // OriginSwaggerSchema returns a swagger API doc for an Origin schema under the /oapi prefix.
-func (f *ring1Factory) OriginSwaggerSchema(client *restclient.RESTClient, version unversioned.GroupVersion) (*swagger.ApiDeclaration, error) {
+func (f *ring1Factory) OriginSwaggerSchema(client *restclient.RESTClient, version schema.GroupVersion) (*swagger.ApiDeclaration, error) {
 	if version.Empty() {
 		return nil, fmt.Errorf("groupVersion cannot be empty")
 	}

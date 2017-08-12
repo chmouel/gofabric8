@@ -44,6 +44,17 @@ func (CPUTargetUtilization) SwaggerDoc() map[string]string {
 	return map_CPUTargetUtilization
 }
 
+var map_CrossVersionObjectReference = map[string]string{
+	"":           "CrossVersionObjectReference contains enough information to let you identify the referred resource.",
+	"kind":       "Kind of the referent; More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#types-kinds\"",
+	"name":       "Name of the referent; More info: http://kubernetes.io/docs/user-guide/identifiers#names",
+	"apiVersion": "API version of the referent",
+}
+
+func (CrossVersionObjectReference) SwaggerDoc() map[string]string {
+	return map_CrossVersionObjectReference
+}
+
 var map_CustomMetricCurrentStatus = map[string]string{
 	"name":  "Custom Metric name.",
 	"value": "Custom Metric value (average).",
@@ -66,8 +77,8 @@ func (CustomMetricTarget) SwaggerDoc() map[string]string {
 var map_DaemonSet = map[string]string{
 	"":         "DaemonSet represents the configuration of a daemon set.",
 	"metadata": "Standard object's metadata. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata",
-	"spec":     "Spec defines the desired behavior of this daemon set. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status",
-	"status":   "Status is the current status of this daemon set. This data may be out of date by some window of time. Populated by the system. Read-only. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status",
+	"spec":     "The desired behavior of this daemon set. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status",
+	"status":   "The current status of this daemon set. This data may be out of date by some window of time. Populated by the system. Read-only. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status",
 }
 
 func (DaemonSet) SwaggerDoc() map[string]string {
@@ -77,7 +88,7 @@ func (DaemonSet) SwaggerDoc() map[string]string {
 var map_DaemonSetList = map[string]string{
 	"":         "DaemonSetList is a collection of daemon sets.",
 	"metadata": "Standard list metadata. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata",
-	"items":    "Items is a list of daemon sets.",
+	"items":    "A list of daemon sets.",
 }
 
 func (DaemonSetList) SwaggerDoc() map[string]string {
@@ -85,9 +96,12 @@ func (DaemonSetList) SwaggerDoc() map[string]string {
 }
 
 var map_DaemonSetSpec = map[string]string{
-	"":         "DaemonSetSpec is the specification of a daemon set.",
-	"selector": "Selector is a label query over pods that are managed by the daemon set. Must match in order to be controlled. If empty, defaulted to labels on Pod template. More info: http://kubernetes.io/docs/user-guide/labels#label-selectors",
-	"template": "Template is the object that describes the pod that will be created. The DaemonSet will create exactly one copy of this pod on every node that matches the template's node selector (or on every node if no node selector is specified). More info: http://kubernetes.io/docs/user-guide/replication-controller#pod-template",
+	"":                   "DaemonSetSpec is the specification of a daemon set.",
+	"selector":           "A label query over pods that are managed by the daemon set. Must match in order to be controlled. If empty, defaulted to labels on Pod template. More info: http://kubernetes.io/docs/user-guide/labels#label-selectors",
+	"template":           "An object that describes the pod that will be created. The DaemonSet will create exactly one copy of this pod on every node that matches the template's node selector (or on every node if no node selector is specified). More info: http://kubernetes.io/docs/user-guide/replication-controller#pod-template",
+	"updateStrategy":     "An update strategy to replace existing DaemonSet pods with new pods.",
+	"minReadySeconds":    "The minimum number of seconds for which a newly created DaemonSet pod should be ready without any of its container crashing, for it to be considered available. Defaults to 0 (pod will be considered available as soon as it is ready).",
+	"templateGeneration": "A sequence number representing a specific generation of the template. Populated by the system. It can be set only during the creation.",
 }
 
 func (DaemonSetSpec) SwaggerDoc() map[string]string {
@@ -96,14 +110,27 @@ func (DaemonSetSpec) SwaggerDoc() map[string]string {
 
 var map_DaemonSetStatus = map[string]string{
 	"": "DaemonSetStatus represents the current status of a daemon set.",
-	"currentNumberScheduled": "CurrentNumberScheduled is the number of nodes that are running at least 1 daemon pod and are supposed to run the daemon pod. More info: http://releases.k8s.io/HEAD/docs/admin/daemons.md",
-	"numberMisscheduled":     "NumberMisscheduled is the number of nodes that are running the daemon pod, but are not supposed to run the daemon pod. More info: http://releases.k8s.io/HEAD/docs/admin/daemons.md",
-	"desiredNumberScheduled": "DesiredNumberScheduled is the total number of nodes that should be running the daemon pod (including nodes correctly running the daemon pod). More info: http://releases.k8s.io/HEAD/docs/admin/daemons.md",
-	"numberReady":            "NumberReady is the number of nodes that should be running the daemon pod and have one or more of the daemon pod running and ready.",
+	"currentNumberScheduled": "The number of nodes that are running at least 1 daemon pod and are supposed to run the daemon pod. More info: http://releases.k8s.io/HEAD/docs/admin/daemons.md",
+	"numberMisscheduled":     "The number of nodes that are running the daemon pod, but are not supposed to run the daemon pod. More info: http://releases.k8s.io/HEAD/docs/admin/daemons.md",
+	"desiredNumberScheduled": "The total number of nodes that should be running the daemon pod (including nodes correctly running the daemon pod). More info: http://releases.k8s.io/HEAD/docs/admin/daemons.md",
+	"numberReady":            "The number of nodes that should be running the daemon pod and have one or more of the daemon pod running and ready.",
+	"observedGeneration":     "The most recent generation observed by the daemon set controller.",
+	"updatedNumberScheduled": "The total number of nodes that are running updated daemon pod",
+	"numberAvailable":        "The number of nodes that should be running the daemon pod and have one or more of the daemon pod running and available (ready for at least spec.minReadySeconds)",
+	"numberUnavailable":      "The number of nodes that should be running the daemon pod and have none of the daemon pod running and available (ready for at least spec.minReadySeconds)",
 }
 
 func (DaemonSetStatus) SwaggerDoc() map[string]string {
 	return map_DaemonSetStatus
+}
+
+var map_DaemonSetUpdateStrategy = map[string]string{
+	"type":          "Type of daemon set update. Can be \"RollingUpdate\" or \"OnDelete\". Default is OnDelete.",
+	"rollingUpdate": "Rolling update config params. Present only if type = \"RollingUpdate\".",
+}
+
+func (DaemonSetUpdateStrategy) SwaggerDoc() map[string]string {
+	return map_DaemonSetUpdateStrategy
 }
 
 var map_Deployment = map[string]string{
@@ -174,6 +201,7 @@ var map_DeploymentStatus = map[string]string{
 	"observedGeneration":  "The generation observed by the deployment controller.",
 	"replicas":            "Total number of non-terminated pods targeted by this deployment (their labels match the selector).",
 	"updatedReplicas":     "Total number of non-terminated pods targeted by this deployment that have the desired template spec.",
+	"readyReplicas":       "Total number of ready pods targeted by this deployment.",
 	"availableReplicas":   "Total number of available pods (ready for at least minReadySeconds) targeted by this deployment.",
 	"unavailableReplicas": "Total number of unavailable pods targeted by this deployment.",
 	"conditions":          "Represents the latest available observations of a deployment's current state.",
@@ -191,16 +219,6 @@ var map_DeploymentStrategy = map[string]string{
 
 func (DeploymentStrategy) SwaggerDoc() map[string]string {
 	return map_DeploymentStrategy
-}
-
-var map_ExportOptions = map[string]string{
-	"":       "ExportOptions is the query options to the standard REST get call.",
-	"export": "Should this value be exported.  Export strips fields that a user can not specify.",
-	"exact":  "Should the export be exact.  Exact export maintains cluster-specific fields like 'Namespace'",
-}
-
-func (ExportOptions) SwaggerDoc() map[string]string {
-	return map_ExportOptions
 }
 
 var map_FSGroupStrategyOptions = map[string]string{
@@ -376,67 +394,28 @@ func (IngressTLS) SwaggerDoc() map[string]string {
 	return map_IngressTLS
 }
 
-var map_Job = map[string]string{
-	"":         "Job represents the configuration of a single job. DEPRECATED: extensions/v1beta1.Job is deprecated, use batch/v1.Job instead.",
-	"metadata": "Standard object's metadata. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata",
-	"spec":     "Spec is a structure defining the expected behavior of a job. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status",
-	"status":   "Status is a structure describing current status of a job. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status",
+var map_MetricSpec = map[string]string{
+	"":         "MetricSpec specifies how to scale based on a single metric (only `type` and one other matching field should be set at once).",
+	"type":     "type is the type of metric source.  It should match one of the fields below.",
+	"object":   "object refers to a metric describing a single kubernetes object (for example, hits-per-second on an Ingress object).",
+	"pods":     "pods refers to a metric describing each pod in the current scale target (for example, transactions-processed-per-second).  The values will be averaged together before being compared to the target value.",
+	"resource": "resource refers to a resource metric (such as those specified in requests and limits) known to Kubernetes describing each pod in the current scale target (e.g. CPU or memory). Such metrics are built in to Kubernetes, and have special scaling options on top of those available to normal per-pod metrics using the \"pods\" source.",
 }
 
-func (Job) SwaggerDoc() map[string]string {
-	return map_Job
+func (MetricSpec) SwaggerDoc() map[string]string {
+	return map_MetricSpec
 }
 
-var map_JobCondition = map[string]string{
-	"":                   "JobCondition describes current state of a job.",
-	"type":               "Type of job condition, Complete or Failed.",
-	"status":             "Status of the condition, one of True, False, Unknown.",
-	"lastProbeTime":      "Last time the condition was checked.",
-	"lastTransitionTime": "Last time the condition transit from one status to another.",
-	"reason":             "(brief) reason for the condition's last transition.",
-	"message":            "Human readable message indicating details about last transition.",
+var map_MetricStatus = map[string]string{
+	"":         "MetricStatus describes the last-read state of a single metric.",
+	"type":     "type is the type of metric source.  It will match one of the fields below.",
+	"object":   "object refers to a metric describing a single kubernetes object (for example, hits-per-second on an Ingress object).",
+	"pods":     "pods refers to a metric describing each pod in the current scale target (for example, transactions-processed-per-second).  The values will be averaged together before being compared to the target value.",
+	"resource": "resource refers to a resource metric (such as those specified in requests and limits) known to Kubernetes describing each pod in the current scale target (e.g. CPU or memory). Such metrics are built in to Kubernetes, and have special scaling options on top of those available to normal per-pod metrics using the \"pods\" source.",
 }
 
-func (JobCondition) SwaggerDoc() map[string]string {
-	return map_JobCondition
-}
-
-var map_JobList = map[string]string{
-	"":         "JobList is a collection of jobs. DEPRECATED: extensions/v1beta1.JobList is deprecated, use batch/v1.JobList instead.",
-	"metadata": "Standard list metadata More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata",
-	"items":    "Items is the list of Job.",
-}
-
-func (JobList) SwaggerDoc() map[string]string {
-	return map_JobList
-}
-
-var map_JobSpec = map[string]string{
-	"":                      "JobSpec describes how the job execution will look like.",
-	"parallelism":           "Parallelism specifies the maximum desired number of pods the job should run at any given time. The actual number of pods running in steady state will be less than this number when ((.spec.completions - .status.successful) < .spec.parallelism), i.e. when the work left to do is less than max parallelism. More info: http://kubernetes.io/docs/user-guide/jobs",
-	"completions":           "Completions specifies the desired number of successfully finished pods the job should be run with.  Setting to nil means that the success of any pod signals the success of all pods, and allows parallelism to have any positive value.  Setting to 1 means that parallelism is limited to 1 and the success of that pod signals the success of the job. More info: http://kubernetes.io/docs/user-guide/jobs",
-	"activeDeadlineSeconds": "Optional duration in seconds relative to the startTime that the job may be active before the system tries to terminate it; value must be positive integer",
-	"selector":              "Selector is a label query over pods that should match the pod count. Normally, the system sets this field for you. More info: http://kubernetes.io/docs/user-guide/labels#label-selectors",
-	"autoSelector":          "AutoSelector controls generation of pod labels and pod selectors. It was not present in the original extensions/v1beta1 Job definition, but exists to allow conversion from batch/v1 Jobs, where it corresponds to, but has the opposite meaning as, ManualSelector. More info: http://releases.k8s.io/HEAD/docs/design/selector-generation.md",
-	"template":              "Template is the object that describes the pod that will be created when executing a job. More info: http://kubernetes.io/docs/user-guide/jobs",
-}
-
-func (JobSpec) SwaggerDoc() map[string]string {
-	return map_JobSpec
-}
-
-var map_JobStatus = map[string]string{
-	"":               "JobStatus represents the current state of a Job.",
-	"conditions":     "Conditions represent the latest available observations of an object's current state. More info: http://kubernetes.io/docs/user-guide/jobs",
-	"startTime":      "StartTime represents time when the job was acknowledged by the Job Manager. It is not guaranteed to be set in happens-before order across separate operations. It is represented in RFC3339 form and is in UTC.",
-	"completionTime": "CompletionTime represents time when the job was completed. It is not guaranteed to be set in happens-before order across separate operations. It is represented in RFC3339 form and is in UTC.",
-	"active":         "Active is the number of actively running pods.",
-	"succeeded":      "Succeeded is the number of pods which reached Phase Succeeded.",
-	"failed":         "Failed is the number of pods which reached Phase Failed.",
-}
-
-func (JobStatus) SwaggerDoc() map[string]string {
-	return map_JobStatus
+func (MetricStatus) SwaggerDoc() map[string]string {
+	return map_MetricStatus
 }
 
 var map_NetworkPolicy = map[string]string{
@@ -495,6 +474,28 @@ func (NetworkPolicySpec) SwaggerDoc() map[string]string {
 	return map_NetworkPolicySpec
 }
 
+var map_ObjectMetricSource = map[string]string{
+	"":            "ObjectMetricSource indicates how to scale on a metric describing a kubernetes object (for example, hits-per-second on an Ingress object).",
+	"target":      "target is the described Kubernetes object.",
+	"metricName":  "metricName is the name of the metric in question.",
+	"targetValue": "targetValue is the target value of the metric (as a quantity).",
+}
+
+func (ObjectMetricSource) SwaggerDoc() map[string]string {
+	return map_ObjectMetricSource
+}
+
+var map_ObjectMetricStatus = map[string]string{
+	"":             "ObjectMetricStatus indicates the current value of a metric describing a kubernetes object (for example, hits-per-second on an Ingress object).",
+	"target":       "target is the described Kubernetes object.",
+	"metricName":   "metricName is the name of the metric in question.",
+	"currentValue": "currentValue is the current value of the metric (as a quantity).",
+}
+
+func (ObjectMetricStatus) SwaggerDoc() map[string]string {
+	return map_ObjectMetricStatus
+}
+
 var map_PodSecurityPolicy = map[string]string{
 	"":         "Pod Security Policy governs the ability to make requests that affect the Security Context that will be applied to a pod and container.",
 	"metadata": "Standard object's metadata. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata",
@@ -535,6 +536,26 @@ var map_PodSecurityPolicySpec = map[string]string{
 
 func (PodSecurityPolicySpec) SwaggerDoc() map[string]string {
 	return map_PodSecurityPolicySpec
+}
+
+var map_PodsMetricSource = map[string]string{
+	"":                   "PodsMetricSource indicates how to scale on a metric describing each pod in the current scale target (for example, transactions-processed-per-second). The values will be averaged together before being compared to the target value.",
+	"metricName":         "metricName is the name of the metric in question",
+	"targetAverageValue": "targetAverageValue is the target value of the average of the metric across all relevant pods (as a quantity)",
+}
+
+func (PodsMetricSource) SwaggerDoc() map[string]string {
+	return map_PodsMetricSource
+}
+
+var map_PodsMetricStatus = map[string]string{
+	"":                    "PodsMetricStatus indicates the current value of a metric describing each pod in the current scale target (for example, transactions-processed-per-second).",
+	"metricName":          "metricName is the name of the metric in question",
+	"currentAverageValue": "currentAverageValue is the current value of the average of the metric across all relevant pods (as a quantity)",
+}
+
+func (PodsMetricStatus) SwaggerDoc() map[string]string {
+	return map_PodsMetricStatus
 }
 
 var map_ReplicaSet = map[string]string{
@@ -605,6 +626,28 @@ func (ReplicationControllerDummy) SwaggerDoc() map[string]string {
 	return map_ReplicationControllerDummy
 }
 
+var map_ResourceMetricSource = map[string]string{
+	"":     "ResourceMetricSource indicates how to scale on a resource metric known to Kubernetes, as specified in requests and limits, describing each pod in the current scale target (e.g. CPU or memory).  The values will be averaged together before being compared to the target.  Such metrics are built in to Kubernetes, and have special scaling options on top of those available to normal per-pod metrics using the \"pods\" source.  Only one \"target\" type should be set.",
+	"name": "name is the name of the resource in question.",
+	"targetAverageUtilization": "targetAverageUtilization is the target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods.",
+	"targetAverageValue":       "targetAverageValue is the the target value of the average of the resource metric across all relevant pods, as a raw value (instead of as a percentage of the request), similar to the \"pods\" metric source type.",
+}
+
+func (ResourceMetricSource) SwaggerDoc() map[string]string {
+	return map_ResourceMetricSource
+}
+
+var map_ResourceMetricStatus = map[string]string{
+	"":     "ResourceMetricStatus indicates the current value of a resource metric known to Kubernetes, as specified in requests and limits, describing each pod in the current scale target (e.g. CPU or memory).  Such metrics are built in to Kubernetes, and have special scaling options on top of those available to normal per-pod metrics using the \"pods\" source.",
+	"name": "name is the name of the resource in question.",
+	"currentAverageUtilization": "currentAverageUtilization is the current value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods.  It will only be present if `targetAverageValue` was set in the corresponding metric specification.",
+	"currentAverageValue":       "currentAverageValue is the the current value of the average of the resource metric across all relevant pods, as a raw value (instead of as a percentage of the request), similar to the \"pods\" metric source type. It will always be set, regardless of the corresponding metric specification.",
+}
+
+func (ResourceMetricStatus) SwaggerDoc() map[string]string {
+	return map_ResourceMetricStatus
+}
+
 var map_RollbackConfig = map[string]string{
 	"revision": "The revision to rollback to. If set to 0, rollbck to the last revision.",
 }
@@ -613,9 +656,18 @@ func (RollbackConfig) SwaggerDoc() map[string]string {
 	return map_RollbackConfig
 }
 
+var map_RollingUpdateDaemonSet = map[string]string{
+	"":               "Spec to control the desired behavior of daemon set rolling update.",
+	"maxUnavailable": "The maximum number of DaemonSet pods that can be unavailable during the update. Value can be an absolute number (ex: 5) or a percentage of total number of DaemonSet pods at the start of the update (ex: 10%). Absolute number is calculated from percentage by rounding up. This cannot be 0. Default value is 1. Example: when this is set to 30%, at most 30% of the total number of nodes that should be running the daemon pod (i.e. status.desiredNumberScheduled) can have their pods stopped for an update at any given time. The update starts by stopping at most 30% of those DaemonSet pods and then brings up new DaemonSet pods in their place. Once the new pods are available, it then proceeds onto other DaemonSet pods, thus ensuring that at least 70% of original number of DaemonSet pods are available at all times during the update.",
+}
+
+func (RollingUpdateDaemonSet) SwaggerDoc() map[string]string {
+	return map_RollingUpdateDaemonSet
+}
+
 var map_RollingUpdateDeployment = map[string]string{
 	"":               "Spec to control the desired behavior of rolling update.",
-	"maxUnavailable": "The maximum number of pods that can be unavailable during the update. Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%). Absolute number is calculated from percentage by rounding up. This can not be 0 if MaxSurge is 0. By default, a fixed value of 1 is used. Example: when this is set to 30%, the old RC can be scaled down to 70% of desired pods immediately when the rolling update starts. Once new pods are ready, old RC can be scaled down further, followed by scaling up the new RC, ensuring that the total number of pods available at all times during the update is at least 70% of desired pods.",
+	"maxUnavailable": "The maximum number of pods that can be unavailable during the update. Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%). Absolute number is calculated from percentage by rounding down. This can not be 0 if MaxSurge is 0. By default, a fixed value of 1 is used. Example: when this is set to 30%, the old RC can be scaled down to 70% of desired pods immediately when the rolling update starts. Once new pods are ready, old RC can be scaled down further, followed by scaling up the new RC, ensuring that the total number of pods available at all times during the update is at least 70% of desired pods.",
 	"maxSurge":       "The maximum number of pods that can be scheduled above the desired number of pods. Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%). This can not be 0 if MaxUnavailable is 0. Absolute number is calculated from percentage by rounding up. By default, a value of 1 is used. Example: when this is set to 30%, the new RC can be scaled up immediately when the rolling update starts, such that the total number of old and new pods do not exceed 130% of desired pods. Once old pods have been killed, new RC can be scaled up further, ensuring that total number of pods running at any time during the update is atmost 130% of desired pods.",
 }
 

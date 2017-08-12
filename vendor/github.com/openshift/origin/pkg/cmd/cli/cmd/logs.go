@@ -7,17 +7,20 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/meta"
 	kcmd "k8s.io/kubernetes/pkg/kubectl/cmd"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/runtime"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildutil "github.com/openshift/origin/pkg/build/util"
+	osclient "github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/templates"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
-	deployapi "github.com/openshift/origin/pkg/deploy/api"
+	deployapi "github.com/openshift/origin/pkg/deploy/apis/apps"
 )
 
 // LogsRecommendedCommandName is the recommended command name
@@ -62,6 +65,12 @@ type OpenShiftLogsOptions struct {
 	// KubeLogOptions contains all the necessary options for
 	// running the upstream logs command.
 	KubeLogOptions *kcmd.LogsOptions
+	// Client enables access to the Build object when processing
+	// build logs for Jenkins Pipeline Strategy builds
+	Client osclient.BuildsNamespacer
+	// Namespace is a required parameter when accessing the Build object when processing
+	// build logs for Jenkins Pipeline Strategy builds
+	Namespace string
 }
 
 // NewCmdLogs creates a new logs command that supports OpenShift resources.
@@ -90,6 +99,19 @@ func NewCmdLogs(name, baseName string, f *clientcmd.Factory, out io.Writer) *cob
 	return cmd
 }
 
+func isPipelineBuild(obj runtime.Object) (bool, *buildapi.BuildConfig, bool, *buildapi.Build, bool) {
+	bc, isBC := obj.(*buildapi.BuildConfig)
+	build, isBld := obj.(*buildapi.Build)
+	isPipeline := false
+	switch {
+	case isBC:
+		isPipeline = bc.Spec.CommonSpec.Strategy.JenkinsPipelineStrategy != nil
+	case isBld:
+		isPipeline = build.Spec.CommonSpec.Strategy.JenkinsPipelineStrategy != nil
+	}
+	return isPipeline, bc, isBC, build, isBld
+}
+
 // Complete calls the upstream Complete for the logs command and then resolves the
 // resource a user requested to view its logs and creates the appropriate logOptions
 // object for it.
@@ -101,12 +123,13 @@ func (o *OpenShiftLogsOptions) Complete(f *clientcmd.Factory, cmd *cobra.Command
 	if err != nil {
 		return err
 	}
+	o.Namespace = namespace
 
 	podLogOptions := o.KubeLogOptions.Options.(*kapi.PodLogOptions)
 
 	mapper, typer := f.Object()
 	infos, err := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), kapi.Codecs.UniversalDecoder()).
-		NamespaceParam(namespace).DefaultNamespace().
+		NamespaceParam(o.Namespace).DefaultNamespace().
 		ResourceNames("pods", args...).
 		SingleResourceType().RequireObject(false).
 		Do().Infos()
@@ -117,12 +140,19 @@ func (o *OpenShiftLogsOptions) Complete(f *clientcmd.Factory, cmd *cobra.Command
 		return errors.New("expected a resource")
 	}
 
+	client, _, err := f.Clients()
+	if err != nil {
+		return err
+	}
+	o.Client = client
+
 	version := kcmdutil.GetFlagInt64(cmd, "version")
 	_, resource := meta.KindToResource(infos[0].Mapping.GroupVersionKind)
 
+	gr := resource.GroupResource()
 	// TODO: podLogOptions should be included in our own logOptions objects.
-	switch resource.GroupResource() {
-	case buildapi.Resource("build"), buildapi.Resource("buildconfig"):
+	switch {
+	case buildapi.IsResourceOrLegacy("build", gr), buildapi.IsResourceOrLegacy("buildconfig", gr):
 		bopts := &buildapi.BuildLogOptions{
 			Follow:       podLogOptions.Follow,
 			Previous:     podLogOptions.Previous,
@@ -136,7 +166,8 @@ func (o *OpenShiftLogsOptions) Complete(f *clientcmd.Factory, cmd *cobra.Command
 			bopts.Version = &version
 		}
 		o.Options = bopts
-	case deployapi.Resource("deploymentconfig"):
+
+	case deployapi.IsResourceOrLegacy("deploymentconfig", gr):
 		dopts := &deployapi.DeploymentLogOptions{
 			Follow:       podLogOptions.Follow,
 			Previous:     podLogOptions.Previous,
@@ -188,6 +219,28 @@ func (o OpenShiftLogsOptions) RunLog() error {
 		// Use our own options object.
 		o.KubeLogOptions.Options = o.Options
 	}
-	_, err := o.KubeLogOptions.RunLogs()
-	return err
+	isPipeline, bc, isBC, build, isBld := isPipelineBuild(o.KubeLogOptions.Object)
+	if !isPipeline {
+		return o.KubeLogOptions.RunLogs()
+	}
+
+	switch {
+	case isBC:
+		buildName := buildutil.BuildNameForConfigVersion(bc.ObjectMeta.Name, int(bc.Status.LastVersion))
+		build, _ = o.Client.Builds(o.Namespace).Get(buildName, metav1.GetOptions{})
+		if build == nil {
+			return errors.New(fmt.Sprintf("The build %s for build config %s was not found", buildName, bc.ObjectMeta.Name))
+		}
+		fallthrough
+	case isBld:
+		urlString, _ := build.Annotations[buildapi.BuildJenkinsBlueOceanLogURLAnnotation]
+		if len(urlString) == 0 {
+			return errors.New(fmt.Sprintf("The pipeline strategy build %s does not yet contain the log URL; wait a few moments, then try again", build.ObjectMeta.Name))
+		}
+		o.KubeLogOptions.Out.Write([]byte(fmt.Sprintf("info: Logs available at %s\n", urlString)))
+	default:
+		return errors.New(fmt.Sprintf("A pipeline strategy build log operation peformed against invalid object %#v", o.KubeLogOptions.Object))
+	}
+
+	return nil
 }

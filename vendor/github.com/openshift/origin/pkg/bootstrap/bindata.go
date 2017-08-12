@@ -25,6 +25,7 @@
 // examples/quickstarts/dancer-mysql.json
 // examples/quickstarts/django-postgresql-persistent.json
 // examples/quickstarts/django-postgresql.json
+// examples/quickstarts/httpd.json
 // examples/quickstarts/nodejs-mongodb-persistent.json
 // examples/quickstarts/nodejs-mongodb.json
 // examples/quickstarts/rails-postgresql-persistent.json
@@ -32,6 +33,7 @@
 // examples/logging/logging-deployer.yaml
 // examples/heapster/heapster-standalone.yaml
 // examples/prometheus/prometheus.yaml
+// examples/service-catalog/service-catalog.yaml
 // pkg/image/admission/imagepolicy/api/v1/default-policy.yaml
 // DO NOT EDIT!
 
@@ -81,6 +83,51 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
   "apiVersion": "v1",
   "metadata": {},
   "items": [
+    {
+      "kind": "ImageStream",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "httpd",
+        "annotations": {
+          "openshift.io/display-name": "Httpd"
+        }
+      },
+      "spec": {
+        "tags": [
+          {
+            "name": "latest",
+            "annotations": {
+              "openshift.io/display-name": "Httpd (Latest)",
+              "description": "Build and serve static content via Httpd on CentOS 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.\n\nWARNING: By selecting this tag, your application will automatically update to use the latest version of Httpd available on OpenShift, including major versions updates.",
+              "iconClass": "icon-apache",
+              "tags": "builder,httpd",
+              "supports":"httpd",
+              "sampleRepo": "https://github.com/openshift/httpd-ex.git"
+            },
+            "from": {
+              "kind": "ImageStreamTag",
+              "name": "2.4"
+            }
+          },
+          {
+            "name": "2.4",
+            "annotations": {
+              "openshift.io/display-name": "Httpd 2.4",
+              "description": "Build and serve static content via Httpd on CentOS 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
+              "iconClass": "icon-apache",
+              "tags": "builder,httpd",
+              "supports":"httpd",
+              "version": "2.4",
+              "sampleRepo": "https://github.com/openshift/httpd-ex.git"
+            },
+            "from": {
+              "kind": "DockerImage",
+              "name": "centos/httpd-24-centos7:latest"
+            }
+          }
+        ]
+      }
+    },
     {
       "kind": "ImageStream",
       "apiVersion": "v1",
@@ -181,7 +228,7 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
             },
             "from": {
               "kind": "ImageStreamTag",
-              "name": "4"
+              "name": "6"
             }
           },
           {
@@ -214,6 +261,22 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
             "from": {
               "kind": "DockerImage",
               "name": "centos/nodejs-4-centos7:latest"
+            }
+          },
+          {
+            "name": "6",
+            "annotations": {
+              "openshift.io/display-name": "Node.js 6",
+              "description": "Build and run Node.js 6 applications on CentOS 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/s2i-nodejs-container/blob/master/6/README.md.",
+              "iconClass": "icon-nodejs",
+              "tags": "builder,nodejs",
+              "supports":"nodejs:6,nodejs",
+              "version": "6",
+              "sampleRepo": "https://github.com/openshift/nodejs-ex.git"
+            },
+            "from": {
+              "kind": "DockerImage",
+              "name": "centos/nodejs-6-centos7:latest"
             }
           }
         ]
@@ -485,7 +548,7 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
               "iconClass": "icon-wildfly",
               "tags": "builder,wildfly,java",
               "supports":"jee,java",
-              "sampleRepo": "https://github.com/bparees/openshift-jee-sample.git"
+              "sampleRepo": "https://github.com/openshift/openshift-jee-sample.git"
             },
             "from": {
               "kind": "ImageStreamTag",
@@ -501,7 +564,7 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
               "tags": "builder,wildfly,java",
               "supports":"wildfly:8.1,jee,java",
               "version": "8.1",
-              "sampleRepo": "https://github.com/bparees/openshift-jee-sample.git"
+              "sampleRepo": "https://github.com/openshift/openshift-jee-sample.git"
             },
             "from": {
               "kind": "DockerImage",
@@ -517,7 +580,7 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
               "tags": "builder,wildfly,java",
               "supports":"wildfly:9.0,jee,java",
               "version": "9.0",
-              "sampleRepo": "https://github.com/bparees/openshift-jee-sample.git"
+              "sampleRepo": "https://github.com/openshift/openshift-jee-sample.git"
             },
             "from": {
               "kind": "DockerImage",
@@ -533,7 +596,7 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
               "tags": "builder,wildfly,java",
               "supports":"wildfly:10.0,jee,java",
               "version": "10.0",
-              "sampleRepo": "https://github.com/bparees/openshift-jee-sample.git"
+              "sampleRepo": "https://github.com/openshift/openshift-jee-sample.git"
             },
             "from": {
               "kind": "DockerImage",
@@ -549,7 +612,7 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
               "tags": "builder,wildfly,java",
               "supports":"wildfly:10.1,jee,java",
               "version": "10.1",
-              "sampleRepo": "https://github.com/bparees/openshift-jee-sample.git"
+              "sampleRepo": "https://github.com/openshift/openshift-jee-sample.git"
             },
             "from": {
               "kind": "DockerImage",
@@ -878,7 +941,7 @@ var _examplesImageStreamsImageStreamsCentos7Json = []byte(`{
               "openshift.io/display-name": "Jenkins 1.X",
               "description": "Provides a Jenkins 1.X server on CentOS 7. For more information about using this container image, including OpenShift considerations, see https://github.com/openshift/jenkins/blob/master/README.md.",
               "iconClass": "icon-jenkins",
-              "tags": "jenkins",
+              "tags": "hidden,jenkins",
               "version": "1.x"
             },
             "from": {
@@ -927,6 +990,51 @@ var _examplesImageStreamsImageStreamsRhel7Json = []byte(`{
   "apiVersion": "v1",
   "metadata": {},
   "items": [
+    {
+      "kind": "ImageStream",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "httpd",
+        "annotations": {
+          "openshift.io/display-name": "Httpd"
+        }
+      },
+      "spec": {
+        "tags": [
+          {
+            "name": "latest",
+            "annotations": {
+              "openshift.io/display-name": "Httpd (Latest)",
+              "description": "Build and serve static content via Httpd on RHEL 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.\n\nWARNING: By selecting this tag, your application will automatically update to use the latest version of Httpd available on OpenShift, including major versions updates.",
+              "iconClass": "icon-apache",
+              "tags": "builder,httpd",
+              "supports":"httpd",
+              "sampleRepo": "https://github.com/openshift/httpd-ex.git"
+            },
+            "from": {
+              "kind": "ImageStreamTag",
+              "name": "2.4"
+            }
+          },
+          {
+            "name": "2.4",
+            "annotations": {
+              "openshift.io/display-name": "Httpd 2.4",
+              "description": "Build and serve static content via Httpd on RHEL 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
+              "iconClass": "icon-apache",
+              "tags": "builder,httpd",
+              "supports":"httpd",
+              "version": "2.4",
+              "sampleRepo": "https://github.com/openshift/httpd-ex.git"
+            },
+            "from": {
+              "kind": "DockerImage",
+              "name": "registry.access.redhat.com/rhscl/httpd-24-rhel7"
+            }
+          }
+        ]
+      }
+    },
     {
       "kind": "ImageStream",
       "apiVersion": "v1",
@@ -1027,7 +1135,7 @@ var _examplesImageStreamsImageStreamsRhel7Json = []byte(`{
             },
             "from": {
               "kind": "ImageStreamTag",
-              "name": "4"
+              "name": "6"
             }
           },
           {
@@ -1060,6 +1168,22 @@ var _examplesImageStreamsImageStreamsRhel7Json = []byte(`{
             "from": {
               "kind": "DockerImage",
               "name": "registry.access.redhat.com/rhscl/nodejs-4-rhel7:latest"
+            }
+          },
+          {
+            "name": "6",
+            "annotations": {
+              "openshift.io/display-name": "Node.js 6",
+              "description": "Build and run Node.js 6 applications on RHEL 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/s2i-nodejs-container.",
+              "iconClass": "icon-nodejs",
+              "tags": "builder,nodejs",
+              "supports":"nodejs:6,nodejs",
+              "version": "6",
+              "sampleRepo": "https://github.com/openshift/nodejs-ex.git"
+            },
+            "from": {
+              "kind": "DockerImage",
+              "name": "registry.access.redhat.com/rhscl/nodejs-6-rhel7:latest"
             }
           }
         ]
@@ -1177,7 +1301,7 @@ var _examplesImageStreamsImageStreamsRhel7Json = []byte(`{
               "tags": "hidden,builder,php",
               "supports":"php:5.5,php",
               "version": "5.5",
-              "sampleRepo": "https://github.com/openshift/cakephp-ex.git"              
+              "sampleRepo": "https://github.com/openshift/cakephp-ex.git"
             },
             "from": {
               "kind": "DockerImage",
@@ -1631,7 +1755,7 @@ var _examplesImageStreamsImageStreamsRhel7Json = []byte(`{
               "openshift.io/display-name": "Jenkins 1.X",
               "description": "Provides a Jenkins 1.X server on RHEL 7. For more information about using this container image, including OpenShift considerations, see https://github.com/openshift/jenkins/blob/master/README.md.",
               "iconClass": "icon-jenkins",
-              "tags": "jenkins",
+              "tags": "hidden,jenkins",
               "version": "1.x"
             },
             "from": {
@@ -1700,7 +1824,12 @@ var _examplesDbTemplatesMariadbEphemeralTemplateJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['database-user']}",
+          "template.openshift.io/expose-password": "{.data['database-password']}",
+          "template.openshift.io/expose-root_password": "{.data['database-root-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${MYSQL_USER}",
@@ -1712,7 +1841,10 @@ var _examplesDbTemplatesMariadbEphemeralTemplateJson = []byte(`{
       "kind": "Service",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "mysql://{.spec.clusterIP}:{.spec.ports[?(.name==\"mariadb\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -1946,7 +2078,12 @@ var _examplesDbTemplatesMariadbPersistentTemplateJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['database-user']}",
+          "template.openshift.io/expose-password": "{.data['database-password']}",
+          "template.openshift.io/expose-root_password": "{.data['database-root-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${MYSQL_USER}",
@@ -1958,7 +2095,10 @@ var _examplesDbTemplatesMariadbPersistentTemplateJson = []byte(`{
       "kind": "Service",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "mysql://{.spec.clusterIP}:{.spec.ports[?(.name==\"mariadb\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -2217,7 +2357,12 @@ var _examplesDbTemplatesMongodbEphemeralTemplateJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['database-user']}",
+          "template.openshift.io/expose-password": "{.data['database-password']}",
+          "template.openshift.io/expose-admin_password": "{.data['database-admin-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${MONGODB_USER}",
@@ -2230,7 +2375,10 @@ var _examplesDbTemplatesMongodbEphemeralTemplateJson = []byte(`{
       "apiVersion": "v1",
       "metadata": {
         "name": "${DATABASE_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "mongodb://{.spec.clusterIP}:{.spec.ports[?(.name==\"mongo\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -2492,7 +2640,12 @@ var _examplesDbTemplatesMongodbPersistentTemplateJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['database-user']}",
+          "template.openshift.io/expose-password": "{.data['database-password']}",
+          "template.openshift.io/expose-admin_password": "{.data['database-admin-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${MONGODB_USER}",
@@ -2505,7 +2658,10 @@ var _examplesDbTemplatesMongodbPersistentTemplateJson = []byte(`{
       "apiVersion": "v1",
       "metadata": {
         "name": "${DATABASE_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "mongodb://{.spec.clusterIP}:{.spec.ports[?(.name==\"mongo\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -2790,7 +2946,12 @@ var _examplesDbTemplatesMysqlEphemeralTemplateJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['database-user']}",
+          "template.openshift.io/expose-password": "{.data['database-password']}",
+          "template.openshift.io/expose-root_password": "{.data['database-root-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${MYSQL_USER}",
@@ -2803,7 +2964,10 @@ var _examplesDbTemplatesMysqlEphemeralTemplateJson = []byte(`{
       "apiVersion": "v1",
       "metadata": {
         "name": "${DATABASE_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "mysql://{.spec.clusterIP}:{.spec.ports[?(.name==\"mysql\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -3065,7 +3229,12 @@ var _examplesDbTemplatesMysqlPersistentTemplateJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['database-user']}",
+          "template.openshift.io/expose-password": "{.data['database-password']}",
+          "template.openshift.io/expose-root_password": "{.data['database-root-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${MYSQL_USER}",
@@ -3077,7 +3246,10 @@ var _examplesDbTemplatesMysqlPersistentTemplateJson = []byte(`{
       "kind": "Service",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "mysql://{.spec.clusterIP}:{.spec.ports[?(.name==\"mysql\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -3343,7 +3515,11 @@ var _examplesDbTemplatesPostgresqlEphemeralTemplateJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['database-user']}",
+          "template.openshift.io/expose-password": "{.data['database-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${POSTGRESQL_USER}",
@@ -3355,7 +3531,10 @@ var _examplesDbTemplatesPostgresqlEphemeralTemplateJson = []byte(`{
       "apiVersion": "v1",
       "metadata": {
         "name": "${DATABASE_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "postgres://{.spec.clusterIP}:{.spec.ports[?(.name==\"postgresql\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -3600,7 +3779,11 @@ var _examplesDbTemplatesPostgresqlPersistentTemplateJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${DATABASE_SERVICE_NAME}"
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['database-user']}",
+          "template.openshift.io/expose-password": "{.data['database-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${POSTGRESQL_USER}",
@@ -3612,7 +3795,10 @@ var _examplesDbTemplatesPostgresqlPersistentTemplateJson = []byte(`{
       "apiVersion": "v1",
       "metadata": {
         "name": "${DATABASE_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "postgres://{.spec.clusterIP}:{.spec.ports[?(.name==\"postgresql\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -3878,11 +4064,27 @@ var _examplesDbTemplatesRedisEphemeralTemplateJson = []byte(`{
   },
   "objects": [
     {
+      "kind": "Secret",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-password": "{.data['database-password']}"
+        }
+      },
+      "stringData" : {
+        "database-password" : "${REDIS_PASSWORD}"
+      }
+    },
+    {
       "kind": "Service",
       "apiVersion": "v1",
       "metadata": {
         "name": "${DATABASE_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "redis://{.spec.clusterIP}:{.spec.ports[?(.name==\"redis\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -3974,7 +4176,12 @@ var _examplesDbTemplatesRedisEphemeralTemplateJson = []byte(`{
                 "env": [
                   {
                     "name": "REDIS_PASSWORD",
-                    "value": "${REDIS_PASSWORD}"
+                    "valueFrom": {
+                      "secretKeyRef" : {
+                        "name" : "${DATABASE_SERVICE_NAME}",
+                        "key" : "database-password"
+                      }
+                    }
                   }
                 ],
                 "resources": {
@@ -4091,11 +4298,27 @@ var _examplesDbTemplatesRedisPersistentTemplateJson = []byte(`{
   },
   "objects": [
     {
+      "kind": "Secret",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "${DATABASE_SERVICE_NAME}",
+        "annotations": {
+          "template.openshift.io/expose-password": "{.data['database-password']}"
+        }
+      },
+      "stringData" : {
+        "database-password" : "${REDIS_PASSWORD}"
+      }
+    },
+    {
       "kind": "Service",
       "apiVersion": "v1",
       "metadata": {
         "name": "${DATABASE_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "redis://{.spec.clusterIP}:{.spec.ports[?(.name==\"redis\")].port}"
+        }
       },
       "spec": {
         "ports": [
@@ -4204,7 +4427,12 @@ var _examplesDbTemplatesRedisPersistentTemplateJson = []byte(`{
                 "env": [
                   {
                     "name": "REDIS_PASSWORD",
-                    "value": "${REDIS_PASSWORD}"
+                    "valueFrom": {
+                      "secretKeyRef" : {
+                        "name" : "${DATABASE_SERVICE_NAME}",
+                        "key" : "database-password"
+                      }
+                    }
                   }
                 ],
                 "resources": {
@@ -4329,7 +4557,10 @@ var _examplesJenkinsJenkinsEphemeralTemplateJson = []byte(`{
       "apiVersion": "v1",
       "metadata": {
         "name": "${JENKINS_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "to": {
@@ -4415,6 +4646,10 @@ var _examplesJenkinsJenkinsEphemeralTemplateJson = []byte(`{
                   {
                     "name": "OPENSHIFT_ENABLE_REDIRECT_PROMPT",
                     "value": "true"
+                  },
+                  {
+                    "name": "OPENSHIFT_JENKINS_JVM_ARCH",
+                    "value": "${JVM_ARCH}"
                   },
                   {
                     "name": "KUBERNETES_MASTER",
@@ -4562,6 +4797,12 @@ var _examplesJenkinsJenkinsEphemeralTemplateJson = []byte(`{
       "value": "true"
     },
     {
+      "name": "JVM_ARCH",
+      "displayName": "Jenkins JVM Architecture",
+      "description": "Whether Jenkins runs with a 32 bit (i386) or 64 bit (x86_64) JVM.",
+      "value": "i386"
+    },
+    {
       "name": "MEMORY_LIMIT",
       "displayName": "Memory Limit",
       "description": "Maximum amount of memory the container can use.",
@@ -4625,7 +4866,10 @@ var _examplesJenkinsJenkinsPersistentTemplateJson = []byte(`{
       "apiVersion": "v1",
       "metadata": {
         "name": "${JENKINS_SERVICE_NAME}",
-        "creationTimestamp": null
+        "creationTimestamp": null,
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "to": {
@@ -4728,6 +4972,10 @@ var _examplesJenkinsJenkinsPersistentTemplateJson = []byte(`{
                   {
                     "name": "OPENSHIFT_ENABLE_REDIRECT_PROMPT",
                     "value": "true"
+                  },
+                  {
+                    "name": "OPENSHIFT_JENKINS_JVM_ARCH",
+                    "value": "${JVM_ARCH}"
                   },
                   {
                     "name": "KUBERNETES_MASTER",
@@ -4875,6 +5123,12 @@ var _examplesJenkinsJenkinsPersistentTemplateJson = []byte(`{
       "value": "true"
     },
     {
+      "name": "JVM_ARCH",
+      "displayName": "Jenkins JVM Architecture",
+      "description": "Whether Jenkins runs with a 32 bit (i386) or 64 bit (x86_64) JVM.",
+      "value": "i386"
+    },
+    {
       "name": "MEMORY_LIMIT",
       "displayName": "Memory Limit",
       "description": "Maximum amount of memory the container can use.",
@@ -4949,42 +5203,52 @@ objects:
     strategy:
       jenkinsPipelineStrategy:
         jenkinsfile: |-
-          def appName="${NAME}"
-          def project=""
-          def tag="blue"
-          def altTag="green"
-
-          node {
-            project = env.PROJECT_NAME
-            stage("Initialize") {
-              sh "oc get route ${appName} -n ${project} -o jsonpath='{ .spec.to.name }' --loglevel=4 > activeservice"
-              activeService = readFile('activeservice').trim()
-              if (activeService == "${appName}-blue") {
-                tag = "green"
-                altTag = "blue"
-              }
-              sh "oc get route ${tag}-${appName} -n ${project} -o jsonpath='{ .spec.host }' --loglevel=4 > routehost"
-              routeHost = readFile('routehost').trim()
-            }
-
-            stage("Build") {
-              echo "building tag ${tag}"
-              openshiftBuild buildConfig: appName, showBuildLogs: "true"
-            }
-
-            stage("Deploy Test") {
-              openshiftTag srcStream: appName, srcTag: 'latest', destinationStream: appName, destinationTag: tag
-              openshiftVerifyDeployment deploymentConfig: "${appName}-${tag}"
-            }
-
-            stage("Test") {
-              input message: "Test deployment: http://${routeHost}. Approve?", id: "approval"
-            }
-
-            stage("Go Live") {
-              sh "oc set -n ${project} route-backends ${appName} ${appName}-${tag}=100 ${appName}-${altTag}=0 --loglevel=4"
-            }
-          }
+          try {
+             timeout(time: 20, unit: 'MINUTES') {
+                def appName="${NAME}"
+                def project=""
+                def tag="blue"
+                def altTag="green"
+                def verbose="${VERBOSE}"
+        
+                node {
+                  project = env.PROJECT_NAME
+                  stage("Initialize") {
+                    sh "oc get route ${appName} -n ${project} -o jsonpath='{ .spec.to.name }' --loglevel=4 > activeservice"
+                    activeService = readFile('activeservice').trim()
+                    if (activeService == "${appName}-blue") {
+                      tag = "green"
+                      altTag = "blue"
+                    }
+                    sh "oc get route ${tag}-${appName} -n ${project} -o jsonpath='{ .spec.host }' --loglevel=4 > routehost"
+                    routeHost = readFile('routehost').trim()
+                  }
+        
+                  stage("Build") {
+                    echo "building tag ${tag}"
+                    openshiftBuild buildConfig: appName, showBuildLogs: "true", verbose: verbose
+                  }
+        
+                  stage("Deploy Test") {
+                    openshiftTag srcStream: appName, srcTag: 'latest', destinationStream: appName, destinationTag: tag, verbose: verbose
+                    openshiftVerifyDeployment deploymentConfig: "${appName}-${tag}", verbose: verbose
+                  }
+        
+                  stage("Test") {
+                    input message: "Test deployment: http://${routeHost}. Approve?", id: "approval"
+                  }
+        
+                  stage("Go Live") {
+                    sh "oc set -n ${project} route-backends ${appName} ${appName}-${tag}=100 ${appName}-${altTag}=0 --loglevel=4"
+                  }
+                }
+             }
+          } catch (err) {
+             echo "in catch block"
+             echo "Caught: ${err}"
+             currentBuild.result = 'FAILURE'
+             throw err
+          }          
       type: JenkinsPipeline
     triggers:
     - github:
@@ -5345,7 +5609,7 @@ parameters:
     of your repository.
   displayName: Context Directory
   name: CONTEXT_DIR
-- description: A secret string used to configure the GitHub webhook.
+- description: Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.
   displayName: GitHub Webhook Secret
   from: '[a-zA-Z0-9]{40}'
   generate: expression
@@ -5363,6 +5627,11 @@ parameters:
   name: NAMESPACE
   required: true
   value: openshift
+- description: Whether to enable verbose logging of Jenkinsfile steps in pipeline
+  displayName: Verbose
+  name: VERBOSE
+  required: true
+  value: "false"
 `)
 
 func examplesJenkinsPipelineBluegreenPipelineYamlBytes() ([]byte, error) {
@@ -5419,7 +5688,7 @@ parameters:
   value: master
 - name: GITHUB_WEBHOOK_SECRET
   displayName: GitHub Webhook Secret
-  description: A secret string used to configure the GitHub webhook.
+  description: Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.
   generate: expression
   from: "[a-zA-Z0-9]{40}"
 - name: GENERIC_WEBHOOK_SECRET
@@ -5441,52 +5710,61 @@ objects:
       type: JenkinsPipeline
       jenkinsPipelineStrategy:
         jenkinsfile: |-
-          def project = ""
-          node {
-            project = "${env.PROJECT_NAME}"
-
-            stage('Create NationalParks back-end') {
-              def nationalParksURL = "${NATIONALPARKS_GIT_URI}"
-              def nationalParksBranch = "${NATIONALPARKS_GIT_REF}"
-              checkout([$class: "GitSCM", branches: [[name: "*/${nationalParksBranch}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: "RelativeTargetDirectory", relativeTargetDir: "nationalparks"]], submoduleCfg: [], userRemoteConfigs: [[url: "${nationalParksURL}"]]])
-              sh "oc new-app -f nationalparks/ose3/pipeline-buildconfig-template.json -p GIT_URI=${nationalParksURL} -p GIT_REF=${nationalParksBranch} -n ${project} --dry-run -o yaml | oc apply -f - -n ${project}"
-            }
-
-            stage('Create MLBParks back-end') {
-              def mlbParksURL = "${MLBPARKS_GIT_URI}"
-              def mlbParksBranch = "${MLBPARKS_GIT_REF}"
-              checkout([$class: "GitSCM", branches: [[name: "*/${mlbParksBranch}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: "RelativeTargetDirectory", relativeTargetDir: "mlbparks"]], submoduleCfg: [], userRemoteConfigs: [[url: "${mlbParksURL}"]]])
-              sh "oc new-app -f mlbparks/ose3/pipeline-buildconfig-template.json -p GIT_URI=${mlbParksURL} -p GIT_REF=${mlbParksBranch} -n ${project} --dry-run -o yaml | oc apply -f - -n ${project}"
-            }
-
-            stage('Create ParksMap front-end') {
-              def parksMapURL = "${PARKSMAP_GIT_URI}"
-              def parksMapBranch = "${PARKSMAP_GIT_REF}"
-              checkout([$class: "GitSCM", branches: [[name: "*/${parksMapBranch}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: "RelativeTargetDirectory", relativeTargetDir: "parksmap"]], submoduleCfg: [], userRemoteConfigs: [[url: "${parksMapURL}"]]])
-              sh "oc new-app -f parksmap/ose3/pipeline-buildconfig-template.json -p GIT_URI=${parksMapURL} -p GIT_REF=${parksMapBranch} -n ${project} --dry-run -o yaml | oc apply -f - -n ${project}"
-            }
-          }
-
-          stage('Build Back-ends') {
-            parallel (
-              "nationalparks": {
+          try {
+             timeout(time: 20, unit: 'MINUTES') {
+                def project = ""
                 node {
-                  openshiftBuild buildConfig: "nationalparks-pipeline", namespace: project
+                  project = "${env.PROJECT_NAME}"
+        
+                  stage('Create NationalParks back-end') {
+                    def nationalParksURL = "${NATIONALPARKS_GIT_URI}"
+                    def nationalParksBranch = "${NATIONALPARKS_GIT_REF}"
+                    checkout([$class: "GitSCM", branches: [[name: "*/${nationalParksBranch}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: "RelativeTargetDirectory", relativeTargetDir: "nationalparks"]], submoduleCfg: [], userRemoteConfigs: [[url: "${nationalParksURL}"]]])
+                    sh "oc new-app -f nationalparks/ose3/pipeline-buildconfig-template.json -p GIT_URI=${nationalParksURL} -p GIT_REF=${nationalParksBranch} -n ${project} --dry-run -o yaml | oc apply -f - -n ${project}"
+                  }
+        
+                  stage('Create MLBParks back-end') {
+                    def mlbParksURL = "${MLBPARKS_GIT_URI}"
+                    def mlbParksBranch = "${MLBPARKS_GIT_REF}"
+                    checkout([$class: "GitSCM", branches: [[name: "*/${mlbParksBranch}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: "RelativeTargetDirectory", relativeTargetDir: "mlbparks"]], submoduleCfg: [], userRemoteConfigs: [[url: "${mlbParksURL}"]]])
+                    sh "oc new-app -f mlbparks/ose3/pipeline-buildconfig-template.json -p GIT_URI=${mlbParksURL} -p GIT_REF=${mlbParksBranch} -n ${project} --dry-run -o yaml | oc apply -f - -n ${project}"
+                  }
+        
+                  stage('Create ParksMap front-end') {
+                    def parksMapURL = "${PARKSMAP_GIT_URI}"
+                    def parksMapBranch = "${PARKSMAP_GIT_REF}"
+                    checkout([$class: "GitSCM", branches: [[name: "*/${parksMapBranch}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: "RelativeTargetDirectory", relativeTargetDir: "parksmap"]], submoduleCfg: [], userRemoteConfigs: [[url: "${parksMapURL}"]]])
+                    sh "oc new-app -f parksmap/ose3/pipeline-buildconfig-template.json -p GIT_URI=${parksMapURL} -p GIT_REF=${parksMapBranch} -n ${project} --dry-run -o yaml | oc apply -f - -n ${project}"
+                  }
                 }
-              },
-              "mlbparks": {
+        
+                stage('Build Back-ends') {
+                  parallel (
+                    "nationalparks": {
+                      node {
+                        openshiftBuild buildConfig: "nationalparks-pipeline", namespace: project
+                      }
+                    },
+                    "mlbparks": {
+                      node {
+                        openshiftBuild buildConfig: "mlbparks-pipeline", namespace: project
+                      }
+                    }
+                  )
+                }
+        
                 node {
-                  openshiftBuild buildConfig: "mlbparks-pipeline", namespace: project
+                  stage('Build Front-end') {
+                    openshiftBuild buildConfig: "parksmap-pipeline", namespace: project
+                  }
                 }
-              }
-            )
-          }
-
-          node {
-            stage('Build Front-end') {
-              openshiftBuild buildConfig: "parksmap-pipeline", namespace: project
-            }
-          }
+             }
+          } catch (err) {
+             echo "in catch block"
+             echo "Caught: ${err}"
+             currentBuild.result = 'FAILURE'
+             throw err
+          }          
     triggers:
     - github:
         secret: ${GITHUB_TRIGGER_SECRET}
@@ -5525,13 +5803,13 @@ parameters:
   description: The source URL for the application
   displayName: Source URL
   required: true
-  value: https://github.com/bparees/openshift-jee-sample.git
+  value: https://github.com/openshift/openshift-jee-sample.git
 - name: GIT_SOURCE_REF
   description: The source Ref for the application
   displayName: Source Ref
   required: true
   value: master
-- description: A secret string used to configure the GitHub webhook.
+- description: Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.
   displayName: GitHub Webhook Secret
   from: '[a-zA-Z0-9]{40}'
   generate: expression
@@ -5587,33 +5865,43 @@ objects:
     strategy:
       jenkinsPipelineStrategy:
         jenkinsfile: |-
-          def appName="${APP_NAME}"
-          def project=""
+          try {
+             timeout(time: 20, unit: 'MINUTES') {
+                def appName="${APP_NAME}"
+                def project=""
 
-          node {
-            stage("Initialize") {
-              project = env.PROJECT_NAME
-            }
-          }
+                node {
+                  stage("Initialize") {
+                    project = env.PROJECT_NAME
+                  }
+                }
 
-          node("maven") {
-            stage("Checkout") {
-              git url: "${GIT_SOURCE_URL}", branch: "${GIT_SOURCE_REF}"
-            }
-            stage("Build WAR") {
-              sh "mvn clean package -Popenshift"
-              stash name:"war", includes:"target/ROOT.war"
-            }
-          }
+                node("maven") {
+                  stage("Checkout") {
+                    git url: "${GIT_SOURCE_URL}", branch: "${GIT_SOURCE_REF}"
+                  }
+                  stage("Build WAR") {
+                    sh "mvn clean package -Popenshift"
+                    stash name:"war", includes:"target/ROOT.war"
+                  }
+                }
 
-          node {
-            stage("Build Image") {
-              unstash name:"war"
-              sh "oc start-build ${appName}-docker --from-file=target/ROOT.war --follow -n ${project}"
-            }
-            stage("Deploy") {
-              openshiftDeploy deploymentConfig: appName, namespace: project
-            }
+                node {
+                  stage("Build Image") {
+                    unstash name:"war"
+                    sh "oc start-build ${appName}-docker --from-file=target/ROOT.war -n ${project}"
+                    openshiftVerifyBuild bldCfg: "${appName}-docker", namespace: project, waitTime: '20', waitUnit: 'min'
+                  }
+                  stage("Deploy") {
+                    openshiftDeploy deploymentConfig: appName, namespace: project
+                  }
+                }
+             }
+          } catch (err) {
+             echo "in catch block"
+             echo "Caught: ${err}"
+             currentBuild.result = 'FAILURE'
+             throw err
           }
       type: JenkinsPipeline
     triggers:
@@ -5816,6 +6104,7 @@ message: |-
   it using your OpenShift user credentials.
 metadata:
   annotations:
+    openshift.io/display-name: Pipeline Build Example
     description: |-
       This example showcases the new Jenkins Pipeline integration in OpenShift,
       which performs continuous integration and deployment right on the platform.
@@ -5882,7 +6171,7 @@ parameters:
     of your repository.
   displayName: Context Directory
   name: CONTEXT_DIR
-- description: A secret string used to configure the GitHub webhook.
+- description: Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.
   displayName: GitHub Webhook Secret
   from: '[a-zA-Z0-9]{40}'
   generate: expression
@@ -5913,14 +6202,23 @@ objects:
     strategy:
       jenkinsPipelineStrategy:
         jenkinsfile: |-
-          node('nodejs') {
-            stage('build') {
-              openshiftBuild(buildConfig: '${NAME}', showBuildLogs: 'true')
-            }
-            stage('deploy') {
-              openshiftDeploy(deploymentConfig: '${NAME}')
-            }
-          }
+          try {
+             timeout(time: 20, unit: 'MINUTES') {
+                node('nodejs') {
+                    stage('build') {
+                      openshiftBuild(buildConfig: '${NAME}', showBuildLogs: 'true')
+                    }
+                    stage('deploy') {
+                      openshiftDeploy(deploymentConfig: '${NAME}')
+                    }
+                  }
+             }
+          } catch (err) {
+             echo "in catch block"
+             echo "Caught: ${err}"
+             currentBuild.result = 'FAILURE'
+             throw err
+          }          
       type: JenkinsPipeline
     triggers:
     - github:
@@ -6212,7 +6510,10 @@ var _examplesQuickstartsCakephpMysqlPersistentJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -6662,7 +6963,7 @@ var _examplesQuickstartsCakephpMysqlPersistentJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -6811,7 +7112,10 @@ var _examplesQuickstartsCakephpMysqlJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -7235,7 +7539,7 @@ var _examplesQuickstartsCakephpMysqlJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -7382,7 +7686,10 @@ var _examplesQuickstartsDancerMysqlPersistentJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -7471,6 +7778,9 @@ var _examplesQuickstartsDancerMysqlPersistentJson = []byte(`{
         }
       },
       "spec": {
+        "strategy": {
+          "type": "Recreate"
+        },
         "triggers": [
           {
             "type": "ImageChange",
@@ -7796,7 +8106,7 @@ var _examplesQuickstartsDancerMysqlPersistentJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -7922,7 +8232,10 @@ var _examplesQuickstartsDancerMysqlJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -8011,6 +8324,9 @@ var _examplesQuickstartsDancerMysqlJson = []byte(`{
         }
       },
       "spec": {
+        "strategy": {
+          "type": "Recreate"
+        },
         "triggers": [
           {
             "type": "ImageChange",
@@ -8310,7 +8626,7 @@ var _examplesQuickstartsDancerMysqlJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -8436,7 +8752,10 @@ var _examplesQuickstartsDjangoPostgresqlPersistentJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -8526,7 +8845,7 @@ var _examplesQuickstartsDjangoPostgresqlPersistentJson = []byte(`{
       },
       "spec": {
         "strategy": {
-          "type": "Rolling"
+          "type": "Recreate"
         },
         "triggers": [
           {
@@ -8857,7 +9176,7 @@ var _examplesQuickstartsDjangoPostgresqlPersistentJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -8989,7 +9308,10 @@ var _examplesQuickstartsDjangoPostgresqlJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -9079,7 +9401,7 @@ var _examplesQuickstartsDjangoPostgresqlJson = []byte(`{
       },
       "spec": {
         "strategy": {
-          "type": "Rolling"
+          "type": "Recreate"
         },
         "triggers": [
           {
@@ -9384,7 +9706,7 @@ var _examplesQuickstartsDjangoPostgresqlJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -9456,6 +9778,297 @@ func examplesQuickstartsDjangoPostgresqlJson() (*asset, error) {
 	return a, nil
 }
 
+var _examplesQuickstartsHttpdJson = []byte(`{
+  "kind": "Template",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "httpd-example",
+    "annotations": {
+      "openshift.io/display-name": "Httpd",
+      "description": "An example Httpd application that serves static content. For more information about using this template, including OpenShift considerations, see https://github.com/openshift/httpd-ex/blob/master/README.md.",
+      "tags": "quickstart,httpd",
+      "iconClass": "icon-apache",
+      "template.openshift.io/long-description": "This template defines resources needed to develop a static application served by httpd, including a build configuration and application deployment configuration.",
+      "template.openshift.io/provider-display-name": "Red Hat, Inc.",
+      "template.openshift.io/documentation-url": "https://github.com/openshift/httpd-ex",
+      "template.openshift.io/support-url": "https://access.redhat.com"
+    }
+  },
+  "message": "The following service(s) have been created in your project: ${NAME}.\n\nFor more information about using this template, including OpenShift considerations, see https://github.com/openshift/httpd-ex/blob/master/README.md.",
+  "labels": {
+    "template": "httpd-example"
+  },
+  "objects": [
+    {
+      "kind": "Service",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "${NAME}",
+        "annotations": {
+          "description": "Exposes and load balances the application pods"
+        }
+      },
+      "spec": {
+        "ports": [
+          {
+            "name": "web",
+            "port": 8080,
+            "targetPort": 8080
+          }
+        ],
+        "selector": {
+          "name": "${NAME}"
+        }
+      }
+    },
+    {
+      "kind": "Route",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
+      },
+      "spec": {
+        "host": "${APPLICATION_DOMAIN}",
+        "to": {
+          "kind": "Service",
+          "name": "${NAME}"
+        }
+      }
+    },
+    {
+      "kind": "ImageStream",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "${NAME}",
+        "annotations": {
+          "description": "Keeps track of changes in the application image"
+        }
+      }
+    },
+    {
+      "kind": "BuildConfig",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "${NAME}",
+        "annotations": {
+          "description": "Defines how to build the application"
+        }
+      },
+      "spec": {
+        "source": {
+          "type": "Git",
+          "git": {
+            "uri": "${SOURCE_REPOSITORY_URL}",
+            "ref": "${SOURCE_REPOSITORY_REF}"
+          },
+          "contextDir": "${CONTEXT_DIR}"
+        },
+        "strategy": {
+          "type": "Source",
+          "sourceStrategy": {
+            "from": {
+              "kind": "ImageStreamTag",
+              "namespace": "${NAMESPACE}",
+              "name": "httpd:2.4"
+            }
+          }
+        },
+        "output": {
+          "to": {
+            "kind": "ImageStreamTag",
+            "name": "${NAME}:latest"
+          }
+        },
+        "triggers": [
+          {
+            "type": "ImageChange"
+          },
+          {
+            "type": "ConfigChange"
+          },
+          {
+            "type": "GitHub",
+            "github": {
+              "secret": "${GITHUB_WEBHOOK_SECRET}"
+            }
+          },
+          {
+            "type": "Generic",
+            "generic": {
+              "secret": "${GENERIC_WEBHOOK_SECRET}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "DeploymentConfig",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "${NAME}",
+        "annotations": {
+          "description": "Defines how to deploy the application server"
+        }
+      },
+      "spec": {
+        "strategy": {
+          "type": "Rolling"
+        },
+        "triggers": [
+          {
+            "type": "ImageChange",
+            "imageChangeParams": {
+              "automatic": true,
+              "containerNames": [
+                "httpd-example"
+              ],
+              "from": {
+                "kind": "ImageStreamTag",
+                "name": "${NAME}:latest"
+              }
+            }
+          },
+          {
+            "type": "ConfigChange"
+          }
+        ],
+        "replicas": 1,
+        "selector": {
+          "name": "${NAME}"
+        },
+        "template": {
+          "metadata": {
+            "name": "${NAME}",
+            "labels": {
+              "name": "${NAME}"
+            }
+          },
+          "spec": {
+            "containers": [
+              {
+                "name": "httpd-example",
+                "image": " ",
+                "ports": [
+                  {
+                    "containerPort": 8080
+                  }
+                ],
+                "readinessProbe": {
+                  "timeoutSeconds": 3,
+                  "initialDelaySeconds": 3,
+                  "httpGet": {
+                    "path": "/",
+                    "port": 8080
+                  }
+                },
+                "livenessProbe": {
+                    "timeoutSeconds": 3,
+                    "initialDelaySeconds": 30,
+                    "httpGet": {
+                        "path": "/",
+                        "port": 8080
+                    }
+                },
+                "resources": {
+                    "limits": {
+                        "memory": "${MEMORY_LIMIT}"
+                    }
+                },
+                "env": [
+                ],
+                "resources": {
+                  "limits": {
+                    "memory": "${MEMORY_LIMIT}"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "name": "NAME",
+      "displayName": "Name",
+      "description": "The name assigned to all of the frontend objects defined in this template.",
+      "required": true,
+      "value": "httpd-example"
+    },
+    {
+      "name": "NAMESPACE",
+      "displayName": "Namespace",
+      "description": "The OpenShift Namespace where the ImageStream resides.",
+      "required": true,
+      "value": "openshift"
+    },
+    {
+      "name": "MEMORY_LIMIT",
+      "displayName": "Memory Limit",
+      "description": "Maximum amount of memory the container can use.",
+      "required": true,
+      "value": "512Mi"
+    },
+    {
+      "name": "SOURCE_REPOSITORY_URL",
+      "displayName": "Git Repository URL",
+      "description": "The URL of the repository with your application source code.",
+      "required": true,
+      "value": "https://github.com/openshift/httpd-ex.git"
+    },
+    {
+      "name": "SOURCE_REPOSITORY_REF",
+      "displayName": "Git Reference",
+      "description": "Set this to a branch name, tag or other ref of your repository if you are not using the default branch."
+    },
+    {
+      "name": "CONTEXT_DIR",
+      "displayName": "Context Directory",
+      "description": "Set this to the relative path to your project if it is not in the root of your repository."
+    },
+    {
+      "name": "APPLICATION_DOMAIN",
+      "displayName": "Application Hostname",
+      "description": "The exposed hostname that will route to the httpd service, if left blank a value will be defaulted.",
+      "value": ""
+    },
+    {
+      "name": "GITHUB_WEBHOOK_SECRET",
+      "displayName": "GitHub Webhook Secret",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
+      "generate": "expression",
+      "from": "[a-zA-Z0-9]{40}"
+    },
+    {
+      "name": "GENERIC_WEBHOOK_SECRET",
+      "displayName": "Generic Webhook Secret",
+      "description": "A secret string used to configure the Generic webhook.",
+      "generate": "expression",
+      "from": "[a-zA-Z0-9]{40}"
+    }
+  ]
+}
+`)
+
+func examplesQuickstartsHttpdJsonBytes() ([]byte, error) {
+	return _examplesQuickstartsHttpdJson, nil
+}
+
+func examplesQuickstartsHttpdJson() (*asset, error) {
+	bytes, err := examplesQuickstartsHttpdJsonBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "examples/quickstarts/httpd.json", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _examplesQuickstartsNodejsMongodbPersistentJson = []byte(`{
   "kind": "Template",
   "apiVersion": "v1",
@@ -9516,7 +10129,10 @@ var _examplesQuickstartsNodejsMongodbPersistentJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -9560,7 +10176,7 @@ var _examplesQuickstartsNodejsMongodbPersistentJson = []byte(`{
             "from": {
               "kind": "ImageStreamTag",
               "namespace": "${NAMESPACE}",
-              "name": "nodejs:4"
+              "name": "nodejs:6"
             },
             "env":  [
               {
@@ -9612,7 +10228,7 @@ var _examplesQuickstartsNodejsMongodbPersistentJson = []byte(`{
       },
       "spec": {
         "strategy": {
-          "type": "Rolling"
+          "type": "Recreate"
         },
         "triggers": [
           {
@@ -9949,7 +10565,7 @@ var _examplesQuickstartsNodejsMongodbPersistentJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -10078,7 +10694,10 @@ var _examplesQuickstartsNodejsMongodbJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -10122,7 +10741,7 @@ var _examplesQuickstartsNodejsMongodbJson = []byte(`{
             "from": {
               "kind": "ImageStreamTag",
               "namespace": "${NAMESPACE}",
-              "name": "nodejs:4"
+              "name": "nodejs:6"
             },
             "env": [
               {
@@ -10174,7 +10793,7 @@ var _examplesQuickstartsNodejsMongodbJson = []byte(`{
       },
       "spec": {
         "strategy": {
-          "type": "Rolling"
+          "type": "Recreate"
         },
         "triggers": [
           {
@@ -10487,7 +11106,7 @@ var _examplesQuickstartsNodejsMongodbJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -10581,7 +11200,11 @@ var _examplesQuickstartsRailsPostgresqlPersistentJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['application-user']}",
+          "template.openshift.io/expose-password": "{.data['application-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${DATABASE_USER}",
@@ -10618,7 +11241,10 @@ var _examplesQuickstartsRailsPostgresqlPersistentJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -11084,7 +11710,7 @@ var _examplesQuickstartsRailsPostgresqlPersistentJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -11200,7 +11826,11 @@ var _examplesQuickstartsRailsPostgresqlJson = []byte(`{
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-username": "{.data['application-user']}",
+          "template.openshift.io/expose-password": "{.data['application-password']}"
+        }
       },
       "stringData" : {
         "database-user" : "${DATABASE_USER}",
@@ -11237,7 +11867,10 @@ var _examplesQuickstartsRailsPostgresqlJson = []byte(`{
       "kind": "Route",
       "apiVersion": "v1",
       "metadata": {
-        "name": "${NAME}"
+        "name": "${NAME}",
+        "annotations": {
+          "template.openshift.io/expose-uri": "http://{.spec.host}{.spec.path}"
+        }
       },
       "spec": {
         "host": "${APPLICATION_DOMAIN}",
@@ -11677,7 +12310,7 @@ var _examplesQuickstartsRailsPostgresqlJson = []byte(`{
     {
       "name": "GITHUB_WEBHOOK_SECRET",
       "displayName": "GitHub Webhook Secret",
-      "description": "A secret string used to configure the GitHub webhook.",
+      "description": "Github trigger secret.  A difficult to guess string encoded as part of the webhook URL.  Not encrypted.",
       "generate": "expression",
       "from": "[a-zA-Z0-9]{40}"
     },
@@ -11813,6 +12446,8 @@ items:
   - apiVersion: v1
     kind: ClusterRole
     metadata:
+      annotations:
+        authorization.openshift.io/system-only: "true"
       name: oauth-editor
     rules:
     - resources:
@@ -11823,6 +12458,8 @@ items:
   - apiVersion: v1
     kind: ClusterRole
     metadata:
+      annotations:
+        authorization.openshift.io/system-only: "true"
       name: daemonset-admin
     rules:
     - resources:
@@ -12241,27 +12878,40 @@ func examplesHeapsterHeapsterStandaloneYaml() (*asset, error) {
 	return a, nil
 }
 
-var _examplesPrometheusPrometheusYaml = []byte(`apiVersion: v1
+var _examplesPrometheusPrometheusYaml = []byte(`apiVersion: template.openshift.io/v1
 kind: Template
 metadata:
   name: prometheus
   annotations:
     "openshift.io/display-name": Prometheus
     description: |
-      A monitoring solution for an OpenShift cluster - collect and gather metrics from nodes, services, and the infrastructure.
+      A monitoring solution for an OpenShift cluster - collect and gather metrics from nodes, services, and the infrastructure. This is a tech preview feature.
     iconClass: icon-cogs
     tags: "monitoring,prometheus,time-series"
 parameters:
 - description: The namespace to instantiate prometheus under. Defaults to 'kube-system'.
   name: NAMESPACE
   value: kube-system
+- description: The location of the proxy image
+  name: IMAGE_PROXY
+  value: openshift/oauth-proxy:v1.0.0
+- description: The location of the prometheus image
+  name: IMAGE_PROMETHEUS
+  value: openshift/prometheus:v2.0.0-dev
+- description: The session secret for the proxy
+  name: SESSION_SECRET
+  generate: expression
+  from: "[a-zA-Z0-9]{43}"
 objects:
+# Authorize the prometheus service account to read data about the cluster
 - apiVersion: v1
   kind: ServiceAccount
   metadata:
     name: prometheus
     namespace: "${NAMESPACE}"
-- apiVersion: v1
+    annotations:
+      serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"prometheus"}}'
+- apiVersion: authorization.openshift.io/v1
   kind: ClusterRoleBinding
   metadata:
     name: prometheus-cluster-reader
@@ -12271,11 +12921,24 @@ objects:
   - kind: ServiceAccount
     name: prometheus
     namespace: "${NAMESPACE}"
+# Create a fully end-to-end TLS connection to the proxy
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: prometheus
+    namespace: "${NAMESPACE}"
+  spec:
+    to:
+      name: prometheus
+    tls:
+      termination: Reencrypt
 - apiVersion: v1
   kind: Service
   metadata:
     annotations:
       prometheus.io/scrape: "true"
+      prometheus.io/scheme: https
+      service.alpha.openshift.io/serving-cert-secret-name: prometheus-tls
     labels:
       name: prometheus
     name: prometheus
@@ -12283,11 +12946,19 @@ objects:
   spec:
     ports:
     - name: prometheus
-      port: 80
+      port: 443
       protocol: TCP
-      targetPort: 9090
+      targetPort: 8443
     selector:
       app: prometheus
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: prometheus-proxy
+    namespace: "${NAMESPACE}"
+  stringData:
+    session_secret: "${SESSION_SECRET}="
+# Deploy Prometheus behind an oauth proxy
 - apiVersion: extensions/v1beta1
   kind: Deployment
   metadata:
@@ -12308,27 +12979,55 @@ objects:
       spec:
         serviceAccountName: prometheus
         containers:
-        - args:
-          - -storage.local.retention=6h
-          - -storage.local.memory-chunks=500000
-          - -config.file=/etc/prometheus/prometheus.yml
-          image: prom/prometheus
+        - name: oauth-proxy
+          image: ${IMAGE_PROXY}
           imagePullPolicy: IfNotPresent
-          name: prometheus
           ports:
-          - containerPort: 8080
+          - containerPort: 8443
             name: web
+          args:
+          - -provider=openshift
+          - -https-address=:8443
+          - -email-domain=*
+          - -upstream=http://localhost:9090
+          - -client-id=system:serviceaccount:${NAMESPACE}:prometheus
+          - '-openshift-sar={"namespace": "${NAMESPACE}", "verb": "list", "resource": "services"}'
+          - -tls-cert=/etc/tls/private/tls.crt
+          - -tls-key=/etc/tls/private/tls.key
+          - -client-secret-file=/var/run/secrets/kubernetes.io/serviceaccount/token
+          - -cookie-secret-file=/etc/proxy/secrets/session_secret
+          - -skip-auth-regex=^/metrics
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: prometheus-tls
+          - mountPath: /etc/proxy/secrets
+            name: secrets
+
+        - name: prometheus
+          args:
+          - --storage.tsdb.retention=6h
+          - --config.file=/etc/prometheus/prometheus.yml
+          - --web.listen-address=localhost:9090
+          image: ${IMAGE_PROMETHEUS}
+          imagePullPolicy: IfNotPresent
           volumeMounts:
           - mountPath: /etc/prometheus
             name: config-volume
           - mountPath: /prometheus
             name: data-volume
+
         restartPolicy: Always
         volumes:
         - configMap:
             defaultMode: 420
             name: prometheus
           name: config-volume
+        - name: secrets
+          secret:
+            secretName: prometheus-proxy
+        - name: prometheus-tls
+          secret:
+            secretName: prometheus-tls
         - emptyDir: {}
           name: data-volume
 - apiVersion: v1
@@ -12430,6 +13129,11 @@ objects:
       # service then set this appropriately.
       - job_name: 'kubernetes-service-endpoints'
 
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          # TODO: this should be per target
+          insecure_skip_verify: true
+
         kubernetes_sd_configs:
         - role: endpoints
 
@@ -12450,6 +13154,14 @@ objects:
           target_label: __address__
           regex: (.+)(?::\d+);(\d+)
           replacement: $1:$2
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_username]
+          action: replace
+          target_label: __basic_auth_username__
+          regex: (.+)
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_password]
+          action: replace
+          target_label: __basic_auth_password__
+          regex: (.+)
         - action: labelmap
           regex: __meta_kubernetes_service_label_(.+)
         - source_labels: [__meta_kubernetes_namespace]
@@ -12471,6 +13183,396 @@ func examplesPrometheusPrometheusYaml() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "examples/prometheus/prometheus.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _examplesServiceCatalogServiceCatalogYaml = []byte(`apiVersion: v1
+kind: Template
+metadata:
+  name: service-catalog
+objects:
+
+- kind: ClusterRole
+  apiVersion: v1
+  metadata:
+    name: servicecatalog-serviceclass-viewer
+  rules:
+  - apiGroups:
+    - servicecatalog.k8s.io
+    resources:
+    - serviceclasses
+    verbs:
+    - list
+    - watch
+    - get
+- kind: ClusterRoleBinding
+  apiVersion: v1
+  metadata:
+    name: servicecatalog-serviceclass-viewer-binding
+  roleRef:
+    name: servicecatalog-serviceclass-viewer
+  groupNames:
+  - system:authenticated
+
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: service-catalog-controller
+
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: service-catalog-apiserver
+
+- kind: ClusterRole
+  apiVersion: v1
+  metadata:
+    name: namespace-viewer
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - namespaces
+    verbs:
+    - list
+    - watch
+    - get
+- kind: ClusterRoleBinding
+  apiVersion: v1
+  metadata:
+    name: service-catalog-namespace-viewer-binding
+  roleRef:
+    name: namespace-viewer
+  userNames:
+    - system:serviceaccount:service-catalog:service-catalog-apiserver
+- kind: ClusterRoleBinding
+  apiVersion: v1
+  metadata:
+    name: service-catalog-controller-namespace-viewer-binding
+  roleRef:
+    name: namespace-viewer
+  userNames:
+    - system:serviceaccount:service-catalog:service-catalog-controller
+
+- kind: ClusterRole
+  apiVersion: v1
+  metadata:
+    name: service-catalog-controller
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - secrets
+    - events
+    verbs:
+    - create
+    - update
+    - patch
+    - delete
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - settings.k8s.io
+    resources:
+    - podpresets
+    verbs:
+    - create
+    - update
+    - delete
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - servicecatalog.k8s.io
+    resources:
+    - brokers/status
+    - instances/status
+    - bindings/status
+    verbs:
+    - update
+- kind: ClusterRoleBinding
+  apiVersion: v1
+  metadata:
+    name: service-catalog-controller-binding
+  roleRef:
+    name: service-catalog-controller
+  userNames:
+    - system:serviceaccount:service-catalog:service-catalog-controller
+  
+- kind: Role
+  apiVersion: v1
+  metadata:
+    name: endpoint-accessor
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - endpoints
+    verbs:
+    - list
+    - watch
+    - get
+    - create
+    - update
+- kind: RoleBinding
+  apiVersion: v1
+  metadata:
+    name: endpointer-accessor-binding
+  roleRef:
+    name: endpoint-accessor
+    namespace: service-catalog
+  userNames:
+    - system:serviceaccount:service-catalog:service-catalog-controller
+
+- kind: Role
+  apiVersion: v1
+  metadata:
+    name: extension-apiserver-authentication-reader
+    namespace: ${KUBE_SYSTEM_NAMESPACE}
+  rules:
+  - apiGroups:
+    - ""
+    resourceNames:
+    - extension-apiserver-authentication
+    resources:
+    - configmaps
+    verbs:
+    - get
+- kind: RoleBinding
+  apiVersion: v1
+  metadata:
+    name: extension-apiserver-authentication-reader-binding
+    namespace: ${KUBE_SYSTEM_NAMESPACE}
+  roleRef:
+    name: extension-apiserver-authentication-reader
+    namespace: kube-system
+  userNames:
+    - system:serviceaccount:service-catalog:service-catalog-apiserver
+
+- kind: ClusterRoleBinding
+  apiVersion: v1
+  metadata:
+    name: system:auth-delegator-binding
+  roleRef:
+    name: system:auth-delegator
+  userNames:
+    - system:serviceaccount:service-catalog:service-catalog-apiserver
+
+
+- kind: Deployment
+  apiVersion: extensions/v1beta1
+  metadata:
+    labels:
+      app: apiserver
+    name: apiserver
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: apiserver
+    strategy:
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        labels:
+          app: apiserver
+      spec:
+        serviceAccountName: service-catalog-apiserver
+        containers:
+        - command: 
+          - apiserver
+          args:
+          - --admission-control
+          - KubernetesNamespaceLifecycle
+          - --storage-type
+          - etcd
+          - --secure-port
+          - "6443"
+          - --insecure-bind-address
+          - 0.0.0.0
+          - --insecure-port
+          - "8081"
+          - --etcd-servers
+          - http://localhost:2379
+          - -v
+          - "10"
+          - --cors-allowed-origins
+          - ${CORS_ALLOWED_ORIGIN}
+          image: ${SERVICE_CATALOG_IMAGE}
+          imagePullPolicy: IfNotPresent
+          name: apiserver
+          ports:
+          - containerPort: 6443
+            protocol: TCP
+          - containerPort: 8081
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /var/run/kubernetes-service-catalog
+            name: apiserver-ssl
+            readOnly: true
+        - env:
+          - name: ETCD_DATA_DIR
+            value: /data-dir
+          image: quay.io/coreos/etcd
+          imagePullPolicy: IfNotPresent
+          name: etcd
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /data-dir
+            name: data-dir
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: apiserver-ssl
+          secret:
+            defaultMode: 420
+            secretName: apiserver-ssl
+            items:
+            - key: tls.crt
+              path: apiserver.crt
+            - key: tls.key
+              path: apiserver.key
+        - emptyDir: {}
+          name: data-dir
+
+- kind: Service
+  apiVersion: v1
+  metadata:
+    name: apiserver
+    annotations:
+      service.alpha.openshift.io/serving-cert-secret-name: 'apiserver-ssl'
+  spec:
+    type: ClusterIP
+    clusterIP: ${SERVICE_CATALOG_SERVICE_IP}
+    ports:
+    - name: insecure
+      port: 80
+      protocol: TCP
+      targetPort: 8081
+    - name: secure
+      port: 443
+      protocol: TCP
+      targetPort: 6443
+    selector:
+      app: apiserver
+    sessionAffinity: None
+
+- kind: Deployment
+  apiVersion: extensions/v1beta1
+  metadata:
+    labels:
+      app: controller-manager
+    name: controller-manager
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: controller-manager
+    strategy:
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        labels:
+          app: controller-manager
+      spec:
+        serviceAccountName: service-catalog-controller
+        containers:
+        - command: 
+          - controller-manager
+          args:
+          - -v
+          - "5"
+          - --service-catalog-api-server-url
+          - http://$(APISERVER_SERVICE_HOST):$(APISERVER_SERVICE_PORT)
+          - --leader-election-namespace
+          - service-catalog
+          - --broker-relist-interval
+          - "5m"
+          image: ${SERVICE_CATALOG_IMAGE}
+          imagePullPolicy: IfNotPresent
+          name: controller-manager
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /etc/service-catalog-ssl
+            name: service-catalog-ssl
+            readOnly: true
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: service-catalog-ssl
+          secret:
+            defaultMode: 420
+            items:
+            - key: tls.crt
+              path: apiserver.crt
+            secretName: apiserver-ssl
+- kind: Service
+  apiVersion: v1
+  metadata:
+    name: controller-manager
+  spec:
+    ports:
+    - port: 6443
+      protocol: TCP
+      targetPort: 6443
+    selector:
+      app: controller-manager
+    sessionAffinity: None
+    type: ClusterIP
+
+parameters:
+- description: CORS allowed origin for the API server, if you need to specify multiple modify the Deployment after creation
+  displayName: CORS Allowed Origin
+  name: CORS_ALLOWED_ORIGIN
+  required: true
+  value: 10.192.213.116
+- description: Name of the service catalog image to use for apiserver and controller-manager
+  displayName: Service catalog image name
+  name: SERVICE_CATALOG_IMAGE
+  required: true
+  value: openshift/origin-service-catalog:latest
+- description: Cluster ip address for the service catalog service
+  displayName: Service Catalog Service IP
+  name: SERVICE_CATALOG_SERVICE_IP
+  required: true
+  value: 172.30.1.2
+- description: Do not change this value.
+  displayName: Name of the kube-system namespace
+  name: KUBE_SYSTEM_NAMESPACE
+  required: true
+  value: kube-system
+  `)
+
+func examplesServiceCatalogServiceCatalogYamlBytes() ([]byte, error) {
+	return _examplesServiceCatalogServiceCatalogYaml, nil
+}
+
+func examplesServiceCatalogServiceCatalogYaml() (*asset, error) {
+	bytes, err := examplesServiceCatalogServiceCatalogYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "examples/service-catalog/service-catalog.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -12589,6 +13691,7 @@ var _bindata = map[string]func() (*asset, error){
 	"examples/quickstarts/dancer-mysql.json": examplesQuickstartsDancerMysqlJson,
 	"examples/quickstarts/django-postgresql-persistent.json": examplesQuickstartsDjangoPostgresqlPersistentJson,
 	"examples/quickstarts/django-postgresql.json": examplesQuickstartsDjangoPostgresqlJson,
+	"examples/quickstarts/httpd.json": examplesQuickstartsHttpdJson,
 	"examples/quickstarts/nodejs-mongodb-persistent.json": examplesQuickstartsNodejsMongodbPersistentJson,
 	"examples/quickstarts/nodejs-mongodb.json": examplesQuickstartsNodejsMongodbJson,
 	"examples/quickstarts/rails-postgresql-persistent.json": examplesQuickstartsRailsPostgresqlPersistentJson,
@@ -12596,6 +13699,7 @@ var _bindata = map[string]func() (*asset, error){
 	"examples/logging/logging-deployer.yaml": examplesLoggingLoggingDeployerYaml,
 	"examples/heapster/heapster-standalone.yaml": examplesHeapsterHeapsterStandaloneYaml,
 	"examples/prometheus/prometheus.yaml": examplesPrometheusPrometheusYaml,
+	"examples/service-catalog/service-catalog.yaml": examplesServiceCatalogServiceCatalogYaml,
 	"pkg/image/admission/imagepolicy/api/v1/default-policy.yaml": pkgImageAdmissionImagepolicyApiV1DefaultPolicyYaml,
 }
 
@@ -12683,10 +13787,14 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"dancer-mysql.json": &bintree{examplesQuickstartsDancerMysqlJson, map[string]*bintree{}},
 			"django-postgresql-persistent.json": &bintree{examplesQuickstartsDjangoPostgresqlPersistentJson, map[string]*bintree{}},
 			"django-postgresql.json": &bintree{examplesQuickstartsDjangoPostgresqlJson, map[string]*bintree{}},
+			"httpd.json": &bintree{examplesQuickstartsHttpdJson, map[string]*bintree{}},
 			"nodejs-mongodb-persistent.json": &bintree{examplesQuickstartsNodejsMongodbPersistentJson, map[string]*bintree{}},
 			"nodejs-mongodb.json": &bintree{examplesQuickstartsNodejsMongodbJson, map[string]*bintree{}},
 			"rails-postgresql-persistent.json": &bintree{examplesQuickstartsRailsPostgresqlPersistentJson, map[string]*bintree{}},
 			"rails-postgresql.json": &bintree{examplesQuickstartsRailsPostgresqlJson, map[string]*bintree{}},
+		}},
+		"service-catalog": &bintree{nil, map[string]*bintree{
+			"service-catalog.yaml": &bintree{examplesServiceCatalogServiceCatalogYaml, map[string]*bintree{}},
 		}},
 	}},
 	"pkg": &bintree{nil, map[string]*bintree{

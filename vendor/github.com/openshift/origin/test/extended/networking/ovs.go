@@ -11,9 +11,9 @@ import (
 	testexutil "github.com/openshift/origin/test/extended/util"
 	testutil "github.com/openshift/origin/test/util"
 
-	kapi "k8s.io/kubernetes/pkg/api"
-	kapiunversioned "k8s.io/kubernetes/pkg/api/unversioned"
-	utilwait "k8s.io/kubernetes/pkg/util/wait"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilwait "k8s.io/apimachinery/pkg/util/wait"
+	kapiv1 "k8s.io/kubernetes/pkg/api/v1"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 
 	. "github.com/onsi/ginkgo"
@@ -50,7 +50,7 @@ var _ = Describe("[networking] OVS", func() {
 				}
 			})
 
-			err := f1.ClientSet.Core().Pods(f1.Namespace.Name).Delete(podName, &kapi.DeleteOptions{})
+			err := f1.ClientSet.Core().Pods(f1.Namespace.Name).Delete(podName, &metav1.DeleteOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			checkFlowsForNode(oc, deployNodeName, func(nodeName string, flows []string) error {
@@ -82,35 +82,35 @@ var _ = Describe("[networking] OVS", func() {
 			newNodeIP := ip.String()
 
 			nodeName := "ovs-test-node"
-			node := &kapi.Node{
-				TypeMeta: kapiunversioned.TypeMeta{
+			node := &kapiv1.Node{
+				TypeMeta: metav1.TypeMeta{
 					Kind: "Node",
 				},
-				ObjectMeta: kapi.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Name: nodeName,
 				},
-				Spec: kapi.NodeSpec{
+				Spec: kapiv1.NodeSpec{
 					Unschedulable: true,
 				},
-				Status: kapi.NodeStatus{
-					Addresses: []kapi.NodeAddress{
+				Status: kapiv1.NodeStatus{
+					Addresses: []kapiv1.NodeAddress{
 						{
-							Type:    kapi.NodeInternalIP,
+							Type:    kapiv1.NodeInternalIP,
 							Address: newNodeIP,
 						},
 					},
 				},
 			}
-			node, err = f1.ClientSet.Core().Nodes().Create(node)
+			node, err = f1.ClientSet.CoreV1().Nodes().Create(node)
 			Expect(err).NotTo(HaveOccurred())
-			defer f1.ClientSet.Core().Nodes().Delete(node.Name, &kapi.DeleteOptions{})
+			defer f1.ClientSet.CoreV1().Nodes().Delete(node.Name, &metav1.DeleteOptions{})
 
 			osClient, err := testutil.GetClusterAdminClient(testexutil.KubeConfigPath())
 			Expect(err).NotTo(HaveOccurred())
 
 			e2e.Logf("Waiting up to %v for HostSubnet to be created", hostSubnetTimeout)
 			for start := time.Now(); time.Since(start) < hostSubnetTimeout; time.Sleep(time.Second) {
-				_, err = osClient.HostSubnets().Get(node.Name)
+				_, err = osClient.HostSubnets().Get(node.Name, metav1.GetOptions{})
 				if err == nil {
 					break
 				}
@@ -121,11 +121,11 @@ var _ = Describe("[networking] OVS", func() {
 				return findFlowOrError("Should have flows referring to node IP address", newFlows, newNodeIP)
 			})
 
-			err = f1.ClientSet.Core().Nodes().Delete(node.Name, &kapi.DeleteOptions{})
+			err = f1.ClientSet.Core().Nodes().Delete(node.Name, &metav1.DeleteOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			e2e.Logf("Waiting up to %v for HostSubnet to be deleted", hostSubnetTimeout)
 			for start := time.Now(); time.Since(start) < hostSubnetTimeout; time.Sleep(time.Second) {
-				_, err = osClient.HostSubnets().Get(node.Name)
+				_, err = osClient.HostSubnets().Get(node.Name, metav1.GetOptions{})
 				if err != nil {
 					break
 				}
@@ -155,9 +155,9 @@ var _ = Describe("[networking] OVS", func() {
 				return findFlowOrError("Should have flows referring to service IP address", newFlows, ip)
 			})
 
-			err := f1.ClientSet.Core().Pods(f1.Namespace.Name).Delete(serviceName, &kapi.DeleteOptions{})
+			err := f1.ClientSet.Core().Pods(f1.Namespace.Name).Delete(serviceName, &metav1.DeleteOptions{})
 			Expect(err).NotTo(HaveOccurred())
-			err = f1.ClientSet.Core().Services(f1.Namespace.Name).Delete(serviceName, &kapi.DeleteOptions{})
+			err = f1.ClientSet.Core().Services(f1.Namespace.Name).Delete(serviceName, &metav1.DeleteOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			checkFlowsForAllNodes(oc, nodes.Items, func(nodeName string, flows []string) error {
@@ -195,21 +195,21 @@ func findFlowOrError(msg string, flows []string, ip string) error {
 }
 
 func doGetFlowsForNode(oc *testexutil.CLI, nodeName string) ([]string, error) {
-	pod := &kapi.Pod{
-		TypeMeta: kapiunversioned.TypeMeta{
+	pod := &kapiv1.Pod{
+		TypeMeta: metav1.TypeMeta{
 			Kind: "Pod",
 		},
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "flow-check",
 		},
-		Spec: kapi.PodSpec{
-			Containers: []kapi.Container{
+		Spec: kapiv1.PodSpec{
+			Containers: []kapiv1.Container{
 				{
 					Name:  "flow-check",
 					Image: "openshift/openvswitch",
 					// kubernetes seems to get confused sometimes if the pod exits too quickly
 					Command: []string{"sh", "-c", "ovs-ofctl -O OpenFlow13 dump-flows br0 && sleep 1"},
-					VolumeMounts: []kapi.VolumeMount{
+					VolumeMounts: []kapiv1.VolumeMount{
 						{
 							Name:      "ovs-socket",
 							MountPath: "/var/run/openvswitch/br0.mgmt",
@@ -217,31 +217,29 @@ func doGetFlowsForNode(oc *testexutil.CLI, nodeName string) ([]string, error) {
 					},
 				},
 			},
-			Volumes: []kapi.Volume{
+			Volumes: []kapiv1.Volume{
 				{
 					Name: "ovs-socket",
-					VolumeSource: kapi.VolumeSource{
-						HostPath: &kapi.HostPathVolumeSource{
+					VolumeSource: kapiv1.VolumeSource{
+						HostPath: &kapiv1.HostPathVolumeSource{
 							Path: "/var/run/openvswitch/br0.mgmt",
 						},
 					},
 				},
 			},
 			NodeName:      nodeName,
-			RestartPolicy: kapi.RestartPolicyNever,
+			RestartPolicy: kapiv1.RestartPolicyNever,
 			// We don't actually need HostNetwork, we just set it so that deploying this pod won't cause any OVS flows to be added
-			SecurityContext: &kapi.PodSecurityContext{
-				HostNetwork: true,
-			},
+			HostNetwork: true,
 		},
 	}
 	f := oc.KubeFramework()
-	podClient := f.ClientSet.Core().Pods(f.Namespace.Name)
+	podClient := f.ClientSet.CoreV1().Pods(f.Namespace.Name)
 	pod, err := podClient.Create(pod)
 	if err != nil {
 		return nil, err
 	}
-	defer podClient.Delete(pod.Name, &kapi.DeleteOptions{})
+	defer podClient.Delete(pod.Name, &metav1.DeleteOptions{})
 	err = waitForPodSuccessInNamespace(f.ClientSet, pod.Name, "flow-check", f.Namespace.Name)
 	if err != nil {
 		return nil, err
@@ -260,7 +258,7 @@ func doGetFlowsForNode(oc *testexutil.CLI, nodeName string) ([]string, error) {
 	return flows, nil
 }
 
-func getFlowsForAllNodes(oc *testexutil.CLI, nodes []kapi.Node) map[string][]string {
+func getFlowsForAllNodes(oc *testexutil.CLI, nodes []kapiv1.Node) map[string][]string {
 	var err error
 	flows := make(map[string][]string, len(nodes))
 	for _, node := range nodes {
@@ -298,7 +296,7 @@ func checkFlowsForNode(oc *testexutil.CLI, nodeName string, checkFlow CheckFlowF
 	expectNoError(err)
 }
 
-func checkFlowsForAllNodes(oc *testexutil.CLI, nodes []kapi.Node, checkFlow CheckFlowFunc) {
+func checkFlowsForAllNodes(oc *testexutil.CLI, nodes []kapiv1.Node, checkFlow CheckFlowFunc) {
 	var lastCheckErr error
 	e2e.Logf("Checking OVS flows for all nodes up to %d times", checkFlowBackoff.Steps)
 	err := utilwait.ExponentialBackoff(checkFlowBackoff, func() (bool, error) {

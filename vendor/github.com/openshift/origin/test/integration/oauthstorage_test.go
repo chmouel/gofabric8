@@ -9,10 +9,11 @@ import (
 	"github.com/RangelReale/osincli"
 	"golang.org/x/oauth2"
 
-	kapi "k8s.io/kubernetes/pkg/api"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 
 	originrest "github.com/openshift/origin/pkg/cmd/server/origin/rest"
-	"github.com/openshift/origin/pkg/oauth/api"
+	oauthapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
 	accesstokenregistry "github.com/openshift/origin/pkg/oauth/registry/oauthaccesstoken"
 	accesstokenetcd "github.com/openshift/origin/pkg/oauth/registry/oauthaccesstoken/etcd"
 	authorizetokenregistry "github.com/openshift/origin/pkg/oauth/registry/oauthauthorizetoken"
@@ -31,23 +32,23 @@ type testUser struct {
 	Err      error
 }
 
-func (u *testUser) ConvertToAuthorizeToken(_ interface{}, token *api.OAuthAuthorizeToken) error {
+func (u *testUser) ConvertToAuthorizeToken(_ interface{}, token *oauthapi.OAuthAuthorizeToken) error {
 	token.UserName = u.UserName
 	token.UserUID = u.UserUID
 	return u.Err
 }
 
-func (u *testUser) ConvertToAccessToken(_ interface{}, token *api.OAuthAccessToken) error {
+func (u *testUser) ConvertToAccessToken(_ interface{}, token *oauthapi.OAuthAccessToken) error {
 	token.UserName = u.UserName
 	token.UserUID = u.UserUID
 	return u.Err
 }
 
-func (u *testUser) ConvertFromAuthorizeToken(*api.OAuthAuthorizeToken) (interface{}, error) {
+func (u *testUser) ConvertFromAuthorizeToken(*oauthapi.OAuthAuthorizeToken) (interface{}, error) {
 	return u.UserName, u.Err
 }
 
-func (u *testUser) ConvertFromAccessToken(*api.OAuthAccessToken) (interface{}, error) {
+func (u *testUser) ConvertFromAccessToken(*oauthapi.OAuthAccessToken) (interface{}, error) {
 	return u.UserName, u.Err
 }
 
@@ -60,7 +61,10 @@ func TestOAuthStorage(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	optsGetter := originrest.StorageOptions(*masterOptions)
+	optsGetter, err := originrest.StorageOptions(*masterOptions)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	clientStorage, err := clientetcd.NewREST(optsGetter)
 	if err != nil {
@@ -120,8 +124,8 @@ func TestOAuthStorage(t *testing.T) {
 		ch <- token
 	}))
 
-	clientRegistry.CreateClient(kapi.NewContext(), &api.OAuthClient{
-		ObjectMeta:        kapi.ObjectMeta{Name: "test"},
+	clientRegistry.CreateClient(apirequest.NewContext(), &oauthapi.OAuthClient{
+		ObjectMeta:        metav1.ObjectMeta{Name: "test"},
 		Secret:            "secret",
 		AdditionalSecrets: []string{"secret1"},
 		RedirectURIs:      []string{assertServer.URL + "/assert"},
@@ -183,7 +187,7 @@ func TestOAuthStorage(t *testing.T) {
 		t.Errorf("unexpected access token: %#v", token)
 	}
 
-	actualToken, err := accessTokenRegistry.GetAccessToken(kapi.NewContext(), token.AccessToken)
+	actualToken, err := accessTokenRegistry.GetAccessToken(apirequest.NewContext(), token.AccessToken, &metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

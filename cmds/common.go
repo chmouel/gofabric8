@@ -29,14 +29,13 @@ import (
 	"github.com/fabric8io/gofabric8/util"
 	"github.com/spf13/cobra"
 
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/watch"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	oclient "github.com/openshift/origin/pkg/client"
-	osapi "github.com/openshift/origin/pkg/project/api"
-	k8api "k8s.io/kubernetes/pkg/api/unversioned"
+	osapi "github.com/openshift/origin/pkg/project/apis/project"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
@@ -92,7 +91,7 @@ func defaultNamespace(cmd *cobra.Command, f cmdutil.Factory) (string, error) {
 func ensureDeploymentOrDCHasReplicas(c *clientset.Clientset, oc *oclient.Client, ns string, name string, minRelicas int32) error {
 	typeOfMaster := util.TypeOfMaster(c)
 	if typeOfMaster == util.OpenShift {
-		dc, err := oc.DeploymentConfigs(ns).Get(name)
+		dc, err := oc.DeploymentConfigs(ns).Get(name, apim.GetOptions{})
 		if err == nil && dc != nil {
 			if dc.Spec.Replicas >= minRelicas {
 				return nil
@@ -103,7 +102,7 @@ func ensureDeploymentOrDCHasReplicas(c *clientset.Clientset, oc *oclient.Client,
 			return err
 		}
 	}
-	deployment, err := c.Extensions().Deployments(ns).Get(name)
+	deployment, err := c.Extensions().Deployments(ns).Get(name, apim.GetOptions{})
 	if err != nil || deployment == nil {
 		return fmt.Errorf("Could not find a Deployment or DeploymentConfig called %s in namespace %s due to %v", name, ns, err)
 	}
@@ -121,7 +120,7 @@ func ensureDeploymentOrDCHasReplicas(c *clientset.Clientset, oc *oclient.Client,
 func waitForReadyPodForDeploymentOrDC(c *clientset.Clientset, oc *oclient.Client, ns string, name string) (string, error) {
 	typeOfMaster := util.TypeOfMaster(c)
 	if typeOfMaster == util.OpenShift {
-		dc, err := oc.DeploymentConfigs(ns).Get(name)
+		dc, err := oc.DeploymentConfigs(ns).Get(name, apim.GetOptions{})
 		if err == nil && dc != nil {
 			selector := dc.Spec.Selector
 			if selector == nil {
@@ -130,7 +129,7 @@ func waitForReadyPodForDeploymentOrDC(c *clientset.Clientset, oc *oclient.Client
 			return waitForReadyPodForSelector(c, oc, ns, selector)
 		}
 	}
-	deployment, err := c.Extensions().Deployments(ns).Get(name)
+	deployment, err := c.Extensions().Deployments(ns).Get(name, apim.GetOptions{})
 	if err != nil || deployment == nil {
 		return "", fmt.Errorf("Could not find a Deployment or DeploymentConfig called %s in namespace %s due to %v", name, ns, err)
 	}
@@ -149,7 +148,7 @@ func waitForReadyPodForDeploymentOrDC(c *clientset.Clientset, oc *oclient.Client
 func waitForBCDeleted(c *oclient.Client, ns string, name string) {
 	first := true
 	for {
-		_, err := c.BuildConfigs(ns).Get(name)
+		_, err := c.BuildConfigs(ns).Get(name, apim.GetOptions{})
 		time.Sleep(time.Second * 2)
 		if err != nil {
 			//util.Infof("can't get %s/%s due to %s\n", ns, name, err)
@@ -163,14 +162,14 @@ func waitForBCDeleted(c *oclient.Client, ns string, name string) {
 }
 
 func waitForReadyPodForSelector(c *clientset.Clientset, oc *oclient.Client, ns string, labels map[string]string) (string, error) {
-	selector, err := unversioned.LabelSelectorAsSelector(&unversioned.LabelSelector{MatchLabels: labels})
+	selector, err := apim.LabelSelectorAsSelector(&apim.LabelSelector{MatchLabels: labels})
 	if err != nil {
 		return "", err
 	}
 	util.Infof("Waiting for a running pod in namespace %s with labels %v\n", ns, labels)
 	for {
-		pods, err := c.Pods(ns).List(api.ListOptions{
-			LabelSelector: selector,
+		pods, err := c.Pods(ns).List(apim.ListOptions{
+			LabelSelector: selector.String(),
 		})
 		if err != nil {
 			return "", err
@@ -200,13 +199,13 @@ func waitForReadyPodForSelector(c *clientset.Clientset, oc *oclient.Client, ns s
 
 // watchAndWaitForBuild waits for the given build to complete
 func watchAndWaitForBuild(c *oclient.Client, ns string, name string, timeout time.Duration) error {
-	_, err := c.Builds(ns).Get(name)
+	_, err := c.Builds(ns).Get(name, apim.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("Failed to find Build %s/%s due to %s", ns, name, err)
 	}
 	// TODO we may wanna add a field selector on the name
 	lastPhase := buildapi.BuildPhaseNew
-	w, err := c.Builds(ns).Watch(api.ListOptions{})
+	w, err := c.Builds(ns).Watch(apim.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -243,13 +242,13 @@ func watchAndWaitForBuild(c *oclient.Client, ns string, name string, timeout tim
 func detectCurrentUserNamespace(ns string, c *clientset.Clientset, oc *oclient.Client) (string, error) {
 	typeOfMaster := util.TypeOfMaster(c)
 	if typeOfMaster == util.OpenShift {
-		projects, err := oc.Projects().List(api.ListOptions{})
+		projects, err := oc.Projects().List(apim.ListOptions{})
 		if err != nil {
 			return "", err
 		}
 		return detectCurrentUserProject(ns, projects.Items, c), nil
 	} else {
-		namespaces, err := c.Namespaces().List(api.ListOptions{})
+		namespaces, err := c.Namespaces().List(apim.ListOptions{})
 		if err != nil {
 			return "", err
 		}
@@ -313,14 +312,14 @@ func detectCurrentUserNamespaceFromNames(current string, items []string, c *clie
 		}
 	}
 
-	selector, err := k8api.LabelSelectorAsSelector(
-		&k8api.LabelSelector{MatchLabels: map[string]string{"kind": "environments"}})
+	selector, err := apim.LabelSelectorAsSelector(
+		&apim.LabelSelector{MatchLabels: map[string]string{"kind": "environments"}})
 	cmdutil.CheckErr(err)
 
 	// Make sure after all it exists
 	for _, name := range items {
 		if name == chosenone {
-			cfgmap, err := c.ConfigMaps(name).List(api.ListOptions{LabelSelector: selector})
+			cfgmap, err := c.ConfigMaps(name).List(apim.ListOptions{LabelSelector: selector.String()})
 			cmdutil.CheckErr(err)
 			if len(cfgmap.Items) == 0 {
 				//TODO: add command line switch to specify the environment if we can't detect it.

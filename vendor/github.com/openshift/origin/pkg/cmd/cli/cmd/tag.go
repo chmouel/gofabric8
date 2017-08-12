@@ -9,17 +9,18 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	kapi "k8s.io/kubernetes/pkg/api"
-	kerrors "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/retry"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/util/sets"
 
 	"github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/templates"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
-	imageapi "github.com/openshift/origin/pkg/image/api"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 )
 
 // TagOptions contains all the necessary options for the cli tag command.
@@ -70,7 +71,6 @@ var (
 	  # Tag an external Docker image and request pullthrough for it.
 	  %[1]s tag --source=docker openshift/origin:latest yourproject/ruby:tip --reference-policy=local
 
-
 	  # Remove the specified spec tag from an image stream.
 	  %[1]s tag openshift/origin:latest -d`)
 )
@@ -92,13 +92,13 @@ func NewCmdTag(fullName string, f *clientcmd.Factory, out io.Writer) *cobra.Comm
 		Run: func(cmd *cobra.Command, args []string) {
 			kcmdutil.CheckErr(opts.Complete(f, cmd, args, out))
 			kcmdutil.CheckErr(opts.Validate())
-			kcmdutil.CheckErr(opts.RunTag())
+			kcmdutil.CheckErr(opts.Run())
 		},
 	}
 
 	cmd.Flags().StringVar(&opts.sourceKind, "source", opts.sourceKind, "Optional hint for the source type; valid values are 'imagestreamtag', 'istag', 'imagestreamimage', 'isimage', and 'docker'.")
 	cmd.Flags().BoolVarP(&opts.deleteTag, "delete", "d", opts.deleteTag, "Delete the provided spec tags.")
-	cmd.Flags().BoolVar(&opts.aliasTag, "alias", false, "Should the destination tag be updated whenever the source tag changes. Defaults to false.")
+	cmd.Flags().BoolVar(&opts.aliasTag, "alias", false, "Should the destination tag be updated whenever the source tag changes. Applies only to a single image stream. Defaults to false.")
 	cmd.Flags().BoolVar(&opts.referenceTag, "reference", false, "Should the destination tag continue to pull from the source namespace. Defaults to false.")
 	cmd.Flags().BoolVar(&opts.scheduleTag, "scheduled", false, "Set a Docker image to be periodically imported from a remote repository. Defaults to false.")
 	cmd.Flags().BoolVar(&opts.insecureTag, "insecure", false, "Set to true if importing the specified Docker image requires HTTP or has a self-signed certificate. Defaults to false.")
@@ -132,7 +132,7 @@ func parseStreamName(defaultNamespace, name string) (string, string, error) {
 
 func determineSourceKind(f *clientcmd.Factory, input string) string {
 	mapper, _ := f.Object()
-	gvks, err := mapper.KindsFor(unversioned.GroupVersionResource{Group: imageapi.GroupName, Resource: input})
+	gvks, err := mapper.KindsFor(schema.GroupVersionResource{Group: imageapi.GroupName, Resource: input})
 	if err == nil {
 		return gvks[0].Kind
 	}
@@ -229,7 +229,7 @@ func (o *TagOptions) Complete(f *clientcmd.Factory, cmd *cobra.Command, args []s
 			if len(srcNamespace) == 0 {
 				srcNamespace = o.namespace
 			}
-			is, err := o.osClient.ImageStreams(srcNamespace).Get(ref.Name)
+			is, err := o.osClient.ImageStreams(srcNamespace).Get(ref.Name, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}
@@ -269,6 +269,25 @@ func (o *TagOptions) Complete(f *clientcmd.Factory, cmd *cobra.Command, args []s
 	}
 
 	return nil
+}
+
+// isCrossImageStream verifies if destination is the same image stream as source. Returns true
+// if any of the destination image stream is different and error from parsing
+// image stream tag.
+func isCrossImageStream(namespace string, srcRef imageapi.DockerImageReference, destNamespace []string, destNameAndTag []string) (bool, error) {
+	for i, ns := range destNamespace {
+		if namespace != ns {
+			return true, nil
+		}
+		name, _, ok := imageapi.SplitImageStreamTag(destNameAndTag[i])
+		if !ok {
+			return false, fmt.Errorf("%q must be of the form <stream_name>:<tag>", destNameAndTag[i])
+		}
+		if srcRef.Name != name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // Validate validates all the required options for the tag command.
@@ -319,15 +338,24 @@ func (o TagOptions) Validate() error {
 	if o.sourceKind != "DockerImage" && (o.scheduleTag || o.insecureTag) {
 		return errors.New("only Docker images can have importing flags set")
 	}
-	if o.aliasTag && (o.scheduleTag || o.insecureTag) {
-		return errors.New("cannot set a Docker image tag as an alias and also set import flags")
+	if o.aliasTag {
+		if o.scheduleTag || o.insecureTag {
+			return errors.New("cannot set a Docker image tag as an alias and also set import flags")
+		}
+		cross, err := isCrossImageStream(o.namespace, o.ref, o.destNamespace, o.destNameAndTag)
+		if err != nil {
+			return err
+		}
+		if cross {
+			return errors.New("cannot set alias across different Image Streams")
+		}
 	}
 
 	return nil
 }
 
-// RunTag contains all the necessary functionality for the OpenShift cli tag command.
-func (o TagOptions) RunTag() error {
+// Run contains all the necessary functionality for the OpenShift cli tag command.
+func (o TagOptions) Run() error {
 	var tagReferencePolicy imageapi.TagReferencePolicyType
 	switch o.referencePolicy {
 	case sourceReferencePolicy:
@@ -360,7 +388,7 @@ func (o TagOptions) RunTag() error {
 				}
 
 				// try the old way
-				target, err := isc.Get(destName)
+				target, err := isc.Get(destName, metav1.GetOptions{})
 				if err != nil {
 					if !kerrors.IsNotFound(err) {
 						return err
@@ -388,7 +416,7 @@ func (o TagOptions) RunTag() error {
 
 			// The user wants to symlink a tag.
 			istag := &imageapi.ImageStreamTag{
-				ObjectMeta: kapi.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Name:      destNameAndTag,
 					Namespace: o.destNamespace[i],
 				},
@@ -473,10 +501,10 @@ func (o TagOptions) RunTag() error {
 
 			}
 
-			target, err := isc.Get(destName)
+			target, err := isc.Get(destName, metav1.GetOptions{})
 			if kerrors.IsNotFound(err) {
 				target = &imageapi.ImageStream{
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: destName,
 					},
 				}

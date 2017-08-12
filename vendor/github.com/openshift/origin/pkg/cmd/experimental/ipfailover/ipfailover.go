@@ -8,11 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/errors"
 	kclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/runtime"
 
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
 	"github.com/openshift/origin/pkg/cmd/templates"
@@ -22,6 +23,7 @@ import (
 	configcmd "github.com/openshift/origin/pkg/config/cmd"
 	"github.com/openshift/origin/pkg/ipfailover"
 	"github.com/openshift/origin/pkg/ipfailover/keepalived"
+	"github.com/openshift/origin/pkg/security/legacyclient"
 )
 
 var (
@@ -100,6 +102,7 @@ func NewCmdIPFailoverConfig(f *clientcmd.Factory, parentName, name string, out, 
 	cmd.Flags().StringVar(&options.NotifyScript, "notify-script", "", "Run this script when state changes.")
 	cmd.Flags().StringVar(&options.CheckScript, "check-script", "", "Run this script at the check-interval to verify service is OK")
 	cmd.Flags().IntVar(&options.CheckInterval, "check-interval", ipfailover.DefaultCheckInterval, "Run the check-script at this interval (seconds)")
+	cmd.Flags().StringVar(&options.Preemption, "preemption-strategy", "preempt_delay 300", "Normlly VRRP will preempt a lower priority machine when a higher priority one comes online. 'nopreempt' allows the lower priority machine to maintain its MASTER status. The default 'preempt_delay 300' causes MASTER to switch after 5 min.")
 	cmd.Flags().StringVar(&options.IptablesChain, "iptables-chain", ipfailover.DefaultIptablesChain, "Add a rule to this iptables chain to accept 224.0.0.28 multicast packets if no rule exists. When iptables-chain is empty do not change iptables.")
 	cmd.Flags().StringVarP(&options.NetworkInterface, "interface", "i", "", "Network interface bound by VRRP to use for the set of virtual IP ranges/addresses specified.")
 
@@ -192,7 +195,7 @@ func Run(f *clientcmd.Factory, options *ipfailover.IPFailoverConfigCmdOptions, c
 	}
 
 	configList := []runtime.Object{
-		&kapi.ServiceAccount{ObjectMeta: kapi.ObjectMeta{Name: options.ServiceAccount}},
+		&kapi.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: options.ServiceAccount}},
 	}
 
 	list.Items = append(configList, list.Items...)
@@ -209,8 +212,7 @@ func Run(f *clientcmd.Factory, options *ipfailover.IPFailoverConfigCmdOptions, c
 }
 
 func validateServiceAccount(client kclientset.Interface, ns string, serviceAccount string) error {
-
-	sccList, err := client.Core().SecurityContextConstraints().List(kapi.ListOptions{})
+	sccList, err := legacyclient.NewFromClient(client.Core().RESTClient()).List(metav1.ListOptions{})
 	if err != nil {
 		if !errors.IsUnauthorized(err) {
 			return fmt.Errorf("could not retrieve list of security constraints to verify service account %q: %v", serviceAccount, err)

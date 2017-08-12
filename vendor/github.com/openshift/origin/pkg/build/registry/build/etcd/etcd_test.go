@@ -3,14 +3,15 @@ package etcd
 import (
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
+	etcdtesting "k8s.io/apiserver/pkg/storage/etcd/testing"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/registry/registrytest"
-	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
 
-	"github.com/openshift/origin/pkg/build/api"
-	_ "github.com/openshift/origin/pkg/build/api/install"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	_ "github.com/openshift/origin/pkg/build/apis/build/install"
 	"github.com/openshift/origin/pkg/build/registry/build"
 	"github.com/openshift/origin/pkg/util/restoptions"
 )
@@ -29,20 +30,20 @@ func TestStorage(t *testing.T) {
 	build.NewRegistry(storage)
 }
 
-func validBuild() *api.Build {
-	return &api.Build{
-		ObjectMeta: kapi.ObjectMeta{Name: "buildid"},
-		Spec: api.BuildSpec{
-			CommonSpec: api.CommonSpec{
-				Source: api.BuildSource{
-					Git: &api.GitBuildSource{
+func validBuild() *buildapi.Build {
+	return &buildapi.Build{
+		ObjectMeta: metav1.ObjectMeta{Name: "buildid"},
+		Spec: buildapi.BuildSpec{
+			CommonSpec: buildapi.CommonSpec{
+				Source: buildapi.BuildSource{
+					Git: &buildapi.GitBuildSource{
 						URI: "http://github.com/my/repository",
 					},
 				},
-				Strategy: api.BuildStrategy{
-					DockerStrategy: &api.DockerBuildStrategy{},
+				Strategy: buildapi.BuildStrategy{
+					DockerStrategy: &buildapi.DockerBuildStrategy{},
 				},
-				Output: api.BuildOutput{
+				Output: buildapi.BuildOutput{
 					To: &kapi.ObjectReference{
 						Kind: "DockerImage",
 						Name: "repository/data",
@@ -64,7 +65,7 @@ func TestCreate(t *testing.T) {
 	test.TestCreate(
 		valid,
 		// invalid
-		&api.Build{},
+		&buildapi.Build{},
 	)
 }
 

@@ -1,24 +1,26 @@
 package test
 
 import (
-	kapi "k8s.io/kubernetes/pkg/api"
-	kerrs "k8s.io/kubernetes/pkg/api/errors"
+	kerrs "k8s.io/apimachinery/pkg/api/errors"
+	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 
-	"github.com/openshift/origin/pkg/user/api"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
 )
 
 type UserRegistry struct {
 	GetErr map[string]error
-	Get    map[string]*api.User
+	Get    map[string]*userapi.User
 
 	CreateErr error
-	Create    *api.User
+	Create    *userapi.User
 
 	UpdateErr map[string]error
-	Update    *api.User
+	Update    *userapi.User
 
 	ListErr error
-	List    *api.UserList
+	List    *userapi.UserList
 
 	Actions *[]Action
 }
@@ -26,13 +28,13 @@ type UserRegistry struct {
 func NewUserRegistry() *UserRegistry {
 	return &UserRegistry{
 		GetErr:    map[string]error{},
-		Get:       map[string]*api.User{},
+		Get:       map[string]*userapi.User{},
 		UpdateErr: map[string]error{},
 		Actions:   &[]Action{},
 	}
 }
 
-func (r *UserRegistry) GetUser(ctx kapi.Context, name string) (*api.User, error) {
+func (r *UserRegistry) GetUser(ctx apirequest.Context, name string, options *metav1.GetOptions) (*userapi.User, error) {
 	*r.Actions = append(*r.Actions, Action{"GetUser", name})
 	if user, ok := r.Get[name]; ok {
 		return user, nil
@@ -40,10 +42,10 @@ func (r *UserRegistry) GetUser(ctx kapi.Context, name string) (*api.User, error)
 	if err, ok := r.GetErr[name]; ok {
 		return nil, err
 	}
-	return nil, kerrs.NewNotFound(api.Resource("user"), name)
+	return nil, kerrs.NewNotFound(userapi.Resource("user"), name)
 }
 
-func (r *UserRegistry) CreateUser(ctx kapi.Context, u *api.User) (*api.User, error) {
+func (r *UserRegistry) CreateUser(ctx apirequest.Context, u *userapi.User) (*userapi.User, error) {
 	*r.Actions = append(*r.Actions, Action{"CreateUser", u})
 	if r.Create == nil && r.CreateErr == nil {
 		return u, nil
@@ -51,7 +53,7 @@ func (r *UserRegistry) CreateUser(ctx kapi.Context, u *api.User) (*api.User, err
 	return r.Create, r.CreateErr
 }
 
-func (r *UserRegistry) UpdateUser(ctx kapi.Context, u *api.User) (*api.User, error) {
+func (r *UserRegistry) UpdateUser(ctx apirequest.Context, u *userapi.User) (*userapi.User, error) {
 	*r.Actions = append(*r.Actions, Action{"UpdateUser", u})
 	err, _ := r.UpdateErr[u.Name]
 	if r.Update == nil && err == nil {
@@ -60,10 +62,10 @@ func (r *UserRegistry) UpdateUser(ctx kapi.Context, u *api.User) (*api.User, err
 	return r.Update, err
 }
 
-func (r *UserRegistry) ListUsers(ctx kapi.Context, options *kapi.ListOptions) (*api.UserList, error) {
+func (r *UserRegistry) ListUsers(ctx apirequest.Context, options *metainternal.ListOptions) (*userapi.UserList, error) {
 	*r.Actions = append(*r.Actions, Action{"ListUsers", options})
 	if r.List == nil && r.ListErr == nil {
-		return &api.UserList{}, nil
+		return &userapi.UserList{}, nil
 	}
 	return r.List, r.ListErr
 }

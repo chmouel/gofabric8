@@ -3,9 +3,9 @@ package plugin
 import (
 	"testing"
 
-	kapi "k8s.io/kubernetes/pkg/api"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	osapi "github.com/openshift/origin/pkg/sdn/api"
+	osapi "github.com/openshift/origin/pkg/sdn/apis/network"
 )
 
 func TestMasterVNIDMap(t *testing.T) {
@@ -15,7 +15,7 @@ func TestMasterVNIDMap(t *testing.T) {
 	checkCurrentVNIDs(t, vmap, 0, 0)
 
 	// assign vnids
-	_, _, err := vmap.allocateNetID(kapi.NamespaceDefault)
+	_, _, err := vmap.allocateNetID(metav1.NamespaceDefault)
 	checkNoErr(t, err)
 	_, exists, err := vmap.allocateNetID("alpha")
 	checkNoErr(t, err)
@@ -62,7 +62,7 @@ func TestMasterVNIDMap(t *testing.T) {
 	checkNoErr(t, vmap.releaseNetID("alpha"))
 	checkNoErr(t, vmap.releaseNetID("bravo"))
 	checkNoErr(t, vmap.releaseNetID("charlie"))
-	checkNoErr(t, vmap.releaseNetID(kapi.NamespaceDefault))
+	checkNoErr(t, vmap.releaseNetID(metav1.NamespaceDefault))
 	checkErr(t, vmap.releaseNetID("bogus"))
 	checkCurrentVNIDs(t, vmap, 0, 0)
 }

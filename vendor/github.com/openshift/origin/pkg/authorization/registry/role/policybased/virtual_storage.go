@@ -5,17 +5,19 @@ import (
 	"fmt"
 	"sort"
 
+	kapierrors "k8s.io/apimachinery/pkg/api/errors"
+	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
+	"k8s.io/apiserver/pkg/registry/generic/registry"
+	"k8s.io/apiserver/pkg/registry/rest"
 	kapi "k8s.io/kubernetes/pkg/api"
-	kapierrors "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/rest"
-	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/retry"
-	"k8s.io/kubernetes/pkg/labels"
-	"k8s.io/kubernetes/pkg/registry/generic/registry"
-	"k8s.io/kubernetes/pkg/runtime"
 
 	oapi "github.com/openshift/origin/pkg/api"
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	authorizationinterfaces "github.com/openshift/origin/pkg/authorization/interfaces"
 	policyregistry "github.com/openshift/origin/pkg/authorization/registry/policy"
 	roleregistry "github.com/openshift/origin/pkg/authorization/registry/role"
@@ -32,12 +34,21 @@ type VirtualStorage struct {
 
 	CreateStrategy rest.RESTCreateStrategy
 	UpdateStrategy rest.RESTUpdateStrategy
-	Resource       unversioned.GroupResource
+	Resource       schema.GroupResource
 }
 
 // NewVirtualStorage creates a new REST for policies.
-func NewVirtualStorage(policyStorage policyregistry.Registry, ruleResolver, cachedRuleResolver rulevalidation.AuthorizationRuleResolver, resource unversioned.GroupResource) roleregistry.Storage {
-	return &VirtualStorage{policyStorage, ruleResolver, cachedRuleResolver, roleregistry.LocalStrategy, roleregistry.LocalStrategy, resource}
+func NewVirtualStorage(policyRegistry policyregistry.Registry, liveRuleResolver, cachedRuleResolver rulevalidation.AuthorizationRuleResolver) roleregistry.Storage {
+	return &VirtualStorage{
+		PolicyStorage: policyRegistry,
+
+		RuleResolver:       liveRuleResolver,
+		CachedRuleResolver: cachedRuleResolver,
+
+		CreateStrategy: roleregistry.LocalStrategy,
+		UpdateStrategy: roleregistry.LocalStrategy,
+		Resource:       authorizationapi.Resource("role"),
+	}
 }
 
 func (m *VirtualStorage) New() runtime.Object {
@@ -47,19 +58,18 @@ func (m *VirtualStorage) NewList() runtime.Object {
 	return &authorizationapi.RoleList{}
 }
 
-func (m *VirtualStorage) List(ctx kapi.Context, options *kapi.ListOptions) (runtime.Object, error) {
-	policyList, err := m.PolicyStorage.ListPolicies(ctx, &kapi.ListOptions{})
+func (m *VirtualStorage) List(ctx apirequest.Context, options *metainternal.ListOptions) (runtime.Object, error) {
+	policyList, err := m.PolicyStorage.ListPolicies(ctx, &metainternal.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	labelSelector, fieldSelector := oapi.ListOptionsToSelectors(options)
+	matcher := roleregistry.Matcher(oapi.InternalListOptionsToSelectors(options))
 
 	roleList := &authorizationapi.RoleList{}
 	for _, policy := range policyList.Items {
 		for _, role := range policy.Roles {
-			if labelSelector.Matches(labels.Set(role.Labels)) &&
-				fieldSelector.Matches(authorizationapi.RoleToSelectableFields(role)) {
+			if matches, err := matcher.Matches(role); err == nil && matches {
 				roleList.Items = append(roleList.Items, *role)
 			}
 		}
@@ -69,8 +79,8 @@ func (m *VirtualStorage) List(ctx kapi.Context, options *kapi.ListOptions) (runt
 	return roleList, nil
 }
 
-func (m *VirtualStorage) Get(ctx kapi.Context, name string) (runtime.Object, error) {
-	policy, err := m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName)
+func (m *VirtualStorage) Get(ctx apirequest.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
+	policy, err := m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName, options)
 	if kapierrors.IsNotFound(err) {
 		return nil, kapierrors.NewNotFound(m.Resource, name)
 	}
@@ -86,10 +96,9 @@ func (m *VirtualStorage) Get(ctx kapi.Context, name string) (runtime.Object, err
 	return role, nil
 }
 
-// Delete(ctx api.Context, name string) (runtime.Object, error)
-func (m *VirtualStorage) Delete(ctx kapi.Context, name string, options *kapi.DeleteOptions) (runtime.Object, error) {
+func (m *VirtualStorage) Delete(ctx apirequest.Context, name string, options *metav1.DeleteOptions) (runtime.Object, bool, error) {
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		policy, err := m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName)
+		policy, err := m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName, &metav1.GetOptions{})
 		if kapierrors.IsNotFound(err) {
 			return kapierrors.NewNotFound(m.Resource, name)
 		}
@@ -102,25 +111,25 @@ func (m *VirtualStorage) Delete(ctx kapi.Context, name string, options *kapi.Del
 		}
 
 		delete(policy.Roles, name)
-		policy.LastModified = unversioned.Now()
+		policy.LastModified = metav1.Now()
 
 		return m.PolicyStorage.UpdatePolicy(ctx, policy)
 	}); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return &unversioned.Status{Status: unversioned.StatusSuccess}, nil
+	return &metav1.Status{Status: metav1.StatusSuccess}, true, nil
 }
 
-func (m *VirtualStorage) Create(ctx kapi.Context, obj runtime.Object) (runtime.Object, error) {
-	return m.createRole(ctx, obj, false)
+func (m *VirtualStorage) Create(ctx apirequest.Context, obj runtime.Object) (runtime.Object, error) {
+	return m.createRole(ctx, obj, rulevalidation.EscalationAllowed(ctx))
 }
 
-func (m *VirtualStorage) CreateRoleWithEscalation(ctx kapi.Context, obj *authorizationapi.Role) (*authorizationapi.Role, error) {
+func (m *VirtualStorage) CreateRoleWithEscalation(ctx apirequest.Context, obj *authorizationapi.Role) (*authorizationapi.Role, error) {
 	return m.createRole(ctx, obj, true)
 }
 
-func (m *VirtualStorage) createRole(ctx kapi.Context, obj runtime.Object, allowEscalation bool) (*authorizationapi.Role, error) {
+func (m *VirtualStorage) createRole(ctx apirequest.Context, obj runtime.Object, allowEscalation bool) (*authorizationapi.Role, error) {
 	// Copy object before passing to BeforeCreate, since it mutates
 	objCopy, err := kapi.Scheme.DeepCopy(obj)
 	if err != nil {
@@ -150,7 +159,7 @@ func (m *VirtualStorage) createRole(ctx kapi.Context, obj runtime.Object, allowE
 
 		role.ResourceVersion = policy.ResourceVersion
 		policy.Roles[role.Name] = role
-		policy.LastModified = unversioned.Now()
+		policy.LastModified = metav1.Now()
 
 		return m.PolicyStorage.UpdatePolicy(ctx, policy)
 	}); err != nil {
@@ -160,20 +169,20 @@ func (m *VirtualStorage) createRole(ctx kapi.Context, obj runtime.Object, allowE
 	return role, nil
 }
 
-func (m *VirtualStorage) Update(ctx kapi.Context, name string, objInfo rest.UpdatedObjectInfo) (runtime.Object, bool, error) {
-	return m.updateRole(ctx, name, objInfo, false)
+func (m *VirtualStorage) Update(ctx apirequest.Context, name string, objInfo rest.UpdatedObjectInfo) (runtime.Object, bool, error) {
+	return m.updateRole(ctx, name, objInfo, rulevalidation.EscalationAllowed(ctx))
 }
-func (m *VirtualStorage) UpdateRoleWithEscalation(ctx kapi.Context, obj *authorizationapi.Role) (*authorizationapi.Role, bool, error) {
+func (m *VirtualStorage) UpdateRoleWithEscalation(ctx apirequest.Context, obj *authorizationapi.Role) (*authorizationapi.Role, bool, error) {
 	return m.updateRole(ctx, obj.Name, rest.DefaultUpdatedObjectInfo(obj, kapi.Scheme), true)
 }
 
-func (m *VirtualStorage) updateRole(ctx kapi.Context, name string, objInfo rest.UpdatedObjectInfo, allowEscalation bool) (*authorizationapi.Role, bool, error) {
+func (m *VirtualStorage) updateRole(ctx apirequest.Context, name string, objInfo rest.UpdatedObjectInfo, allowEscalation bool) (*authorizationapi.Role, bool, error) {
 	var updatedRole *authorizationapi.Role
 	var roleConflicted = false
 
 	// Retry if the policy update hits a conflict
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		policy, err := m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName)
+		policy, err := m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName, &metav1.GetOptions{})
 		if kapierrors.IsNotFound(err) {
 			return kapierrors.NewNotFound(m.Resource, name)
 		}
@@ -224,7 +233,7 @@ func (m *VirtualStorage) updateRole(ctx kapi.Context, name string, objInfo rest.
 
 		role.ResourceVersion = policy.ResourceVersion
 		policy.Roles[role.Name] = role
-		policy.LastModified = unversioned.Now()
+		policy.LastModified = metav1.Now()
 
 		if err := m.PolicyStorage.UpdatePolicy(ctx, policy); err != nil {
 			return err
@@ -244,15 +253,15 @@ func (m *VirtualStorage) updateRole(ctx kapi.Context, name string, objInfo rest.
 
 // EnsurePolicy returns the policy object for the specified namespace.  If one does not exist, it is created for you.  Permission to
 // create, update, or delete roles in a namespace implies the ability to create a Policy object itself.
-func (m *VirtualStorage) EnsurePolicy(ctx kapi.Context) (*authorizationapi.Policy, error) {
-	policy, err := m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName)
+func (m *VirtualStorage) EnsurePolicy(ctx apirequest.Context) (*authorizationapi.Policy, error) {
+	policy, err := m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName, &metav1.GetOptions{})
 	if err != nil {
 		if !kapierrors.IsNotFound(err) {
 			return nil, err
 		}
 
 		// if we have no policy, go ahead and make one.  creating one here collapses code paths below.  We only take this hit once
-		policy = NewEmptyPolicy(kapi.NamespaceValue(ctx))
+		policy = NewEmptyPolicy(apirequest.NamespaceValue(ctx))
 		if err := m.PolicyStorage.CreatePolicy(ctx, policy); err != nil {
 			// Tolerate the policy having been created in the meantime
 			if !kapierrors.IsAlreadyExists(err) {
@@ -260,7 +269,7 @@ func (m *VirtualStorage) EnsurePolicy(ctx kapi.Context) (*authorizationapi.Polic
 			}
 		}
 
-		policy, err = m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName)
+		policy, err = m.PolicyStorage.GetPolicy(ctx, authorizationapi.PolicyName, &metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -278,7 +287,7 @@ func NewEmptyPolicy(namespace string) *authorizationapi.Policy {
 	policy := &authorizationapi.Policy{}
 	policy.Name = authorizationapi.PolicyName
 	policy.Namespace = namespace
-	policy.CreationTimestamp = unversioned.Now()
+	policy.CreationTimestamp = metav1.Now()
 	policy.LastModified = policy.CreationTimestamp
 	policy.Roles = make(map[string]*authorizationapi.Role)
 

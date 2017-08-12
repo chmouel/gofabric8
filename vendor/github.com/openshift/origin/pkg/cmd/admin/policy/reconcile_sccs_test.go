@@ -4,7 +4,10 @@ import (
 	"reflect"
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kapi "k8s.io/kubernetes/pkg/api"
+
+	securityapi "github.com/openshift/origin/pkg/security/apis/security"
 )
 
 func TestComputeDefinitions(t *testing.T) {
@@ -15,7 +18,7 @@ func TestComputeDefinitions(t *testing.T) {
 	diffCaps.AllowedCapabilities = []kapi.Capability{"foo"}
 
 	diffHostDir := goodSCC()
-	diffHostDir.Volumes = []kapi.FSType{kapi.FSTypeHostPath}
+	diffHostDir.Volumes = []securityapi.FSType{securityapi.FSTypeHostPath}
 
 	diffHostNetwork := goodSCC()
 	diffHostNetwork.AllowHostNetwork = true
@@ -30,28 +33,28 @@ func TestComputeDefinitions(t *testing.T) {
 	diffHostIPC.AllowHostIPC = true
 
 	diffSELinux := goodSCC()
-	diffSELinux.SELinuxContext.Type = kapi.SELinuxStrategyMustRunAs
+	diffSELinux.SELinuxContext.Type = securityapi.SELinuxStrategyMustRunAs
 
 	diffRunAsUser := goodSCC()
-	diffRunAsUser.RunAsUser.Type = kapi.RunAsUserStrategyMustRunAs
+	diffRunAsUser.RunAsUser.Type = securityapi.RunAsUserStrategyMustRunAs
 
 	diffSupGroups := goodSCC()
-	diffSupGroups.SupplementalGroups.Type = kapi.SupplementalGroupsStrategyMustRunAs
+	diffSupGroups.SupplementalGroups.Type = securityapi.SupplementalGroupsStrategyMustRunAs
 
 	diffFSGroup := goodSCC()
-	diffFSGroup.FSGroup.Type = kapi.FSGroupStrategyMustRunAs
+	diffFSGroup.FSGroup.Type = securityapi.FSGroupStrategyMustRunAs
 
 	diffVolumes := goodSCC()
-	diffVolumes.Volumes = []kapi.FSType{kapi.FSTypeAWSElasticBlockStore}
+	diffVolumes.Volumes = []securityapi.FSType{securityapi.FSTypeAWSElasticBlockStore}
 
 	noDiffVolumesA := goodSCC()
-	noDiffVolumesA.Volumes = []kapi.FSType{kapi.FSTypeAWSElasticBlockStore, kapi.FSTypeHostPath}
+	noDiffVolumesA.Volumes = []securityapi.FSType{securityapi.FSTypeAWSElasticBlockStore, securityapi.FSTypeHostPath}
 	noDiffVolumesB := goodSCC()
-	noDiffVolumesB.Volumes = []kapi.FSType{kapi.FSTypeHostPath, kapi.FSTypeAWSElasticBlockStore}
+	noDiffVolumesB.Volumes = []securityapi.FSType{securityapi.FSTypeHostPath, securityapi.FSTypeAWSElasticBlockStore}
 
 	tests := map[string]struct {
-		expected    kapi.SecurityContextConstraints
-		actual      kapi.SecurityContextConstraints
+		expected    securityapi.SecurityContextConstraints
+		actual      securityapi.SecurityContextConstraints
 		needsUpdate bool
 	}{
 		"different priv": {
@@ -153,26 +156,26 @@ func TestComputeDefinitions(t *testing.T) {
 func TestComputeMetadata(t *testing.T) {
 	tests := map[string]struct {
 		union       bool
-		desired     kapi.ObjectMeta
-		actual      kapi.ObjectMeta
+		desired     metav1.ObjectMeta
+		actual      metav1.ObjectMeta
 		needsUpdate bool
-		computed    kapi.ObjectMeta
+		computed    metav1.ObjectMeta
 	}{
 		"identical with union": {
 			union: true,
-			desired: kapi.ObjectMeta{
+			desired: metav1.ObjectMeta{
 				Name:        "foo",
 				Labels:      map[string]string{"labela": "a"},
 				Annotations: map[string]string{"annotationa": "a"},
 			},
-			actual: kapi.ObjectMeta{
+			actual: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a"},
 				Annotations:     map[string]string{"annotationa": "a"},
 				ResourceVersion: "2",
 			},
 			needsUpdate: false,
-			computed: kapi.ObjectMeta{
+			computed: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a"},
 				Annotations:     map[string]string{"annotationa": "a"},
@@ -181,19 +184,19 @@ func TestComputeMetadata(t *testing.T) {
 		},
 		"identical without union": {
 			union: false,
-			desired: kapi.ObjectMeta{
+			desired: metav1.ObjectMeta{
 				Name:        "foo",
 				Labels:      map[string]string{"labela": "a"},
 				Annotations: map[string]string{"annotationa": "a"},
 			},
-			actual: kapi.ObjectMeta{
+			actual: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a"},
 				Annotations:     map[string]string{"annotationa": "a"},
 				ResourceVersion: "2",
 			},
 			needsUpdate: false,
-			computed: kapi.ObjectMeta{
+			computed: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a"},
 				Annotations:     map[string]string{"annotationa": "a"},
@@ -203,19 +206,19 @@ func TestComputeMetadata(t *testing.T) {
 
 		"missing labels and annotations with union": {
 			union: true,
-			desired: kapi.ObjectMeta{
+			desired: metav1.ObjectMeta{
 				Name:        "foo",
 				Labels:      map[string]string{"labela": "a", "labelb": "b"},
 				Annotations: map[string]string{"annotationa": "a", "annotationb": "b"},
 			},
-			actual: kapi.ObjectMeta{
+			actual: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a"},
 				Annotations:     map[string]string{"annotationa": "a"},
 				ResourceVersion: "2",
 			},
 			needsUpdate: true,
-			computed: kapi.ObjectMeta{
+			computed: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a", "labelb": "b"},
 				Annotations:     map[string]string{"annotationa": "a", "annotationb": "b"},
@@ -224,19 +227,19 @@ func TestComputeMetadata(t *testing.T) {
 		},
 		"missing labels and annotations without union": {
 			union: false,
-			desired: kapi.ObjectMeta{
+			desired: metav1.ObjectMeta{
 				Name:        "foo",
 				Labels:      map[string]string{"labela": "a", "labelb": "b"},
 				Annotations: map[string]string{"annotationa": "a", "annotationb": "b"},
 			},
-			actual: kapi.ObjectMeta{
+			actual: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a"},
 				Annotations:     map[string]string{"annotationa": "a"},
 				ResourceVersion: "2",
 			},
 			needsUpdate: true,
-			computed: kapi.ObjectMeta{
+			computed: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a", "labelb": "b"},
 				Annotations:     map[string]string{"annotationa": "a", "annotationb": "b"},
@@ -246,19 +249,19 @@ func TestComputeMetadata(t *testing.T) {
 
 		"extra labels and annotations with union": {
 			union: true,
-			desired: kapi.ObjectMeta{
+			desired: metav1.ObjectMeta{
 				Name:        "foo",
 				Labels:      map[string]string{"labela": "a"},
 				Annotations: map[string]string{"annotationa": "a"},
 			},
-			actual: kapi.ObjectMeta{
+			actual: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a", "labelb": "b"},
 				Annotations:     map[string]string{"annotationa": "a", "annotationb": "b"},
 				ResourceVersion: "2",
 			},
 			needsUpdate: false,
-			computed: kapi.ObjectMeta{
+			computed: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a", "labelb": "b"},
 				Annotations:     map[string]string{"annotationa": "a", "annotationb": "b"},
@@ -267,19 +270,19 @@ func TestComputeMetadata(t *testing.T) {
 		},
 		"extra labels and annotations without union": {
 			union: false,
-			desired: kapi.ObjectMeta{
+			desired: metav1.ObjectMeta{
 				Name:        "foo",
 				Labels:      map[string]string{"labela": "a"},
 				Annotations: map[string]string{"annotationa": "a"},
 			},
-			actual: kapi.ObjectMeta{
+			actual: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a", "labelb": "b"},
 				Annotations:     map[string]string{"annotationa": "a", "annotationb": "b"},
 				ResourceVersion: "2",
 			},
 			needsUpdate: true,
-			computed: kapi.ObjectMeta{
+			computed: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a"},
 				Annotations:     map[string]string{"annotationa": "a"},
@@ -289,19 +292,19 @@ func TestComputeMetadata(t *testing.T) {
 
 		"disjoint labels and annotations with union": {
 			union: true,
-			desired: kapi.ObjectMeta{
+			desired: metav1.ObjectMeta{
 				Name:        "foo",
 				Labels:      map[string]string{"labela": "a"},
 				Annotations: map[string]string{"annotationa": "a"},
 			},
-			actual: kapi.ObjectMeta{
+			actual: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labelb": "b"},
 				Annotations:     map[string]string{"annotationb": "b"},
 				ResourceVersion: "2",
 			},
 			needsUpdate: true,
-			computed: kapi.ObjectMeta{
+			computed: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a", "labelb": "b"},
 				Annotations:     map[string]string{"annotationa": "a", "annotationb": "b"},
@@ -310,19 +313,19 @@ func TestComputeMetadata(t *testing.T) {
 		},
 		"disjoint labels and annotations without union": {
 			union: false,
-			desired: kapi.ObjectMeta{
+			desired: metav1.ObjectMeta{
 				Name:        "foo",
 				Labels:      map[string]string{"labela": "a"},
 				Annotations: map[string]string{"annotationa": "a"},
 			},
-			actual: kapi.ObjectMeta{
+			actual: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labelb": "b"},
 				Annotations:     map[string]string{"annotationb": "b"},
 				ResourceVersion: "2",
 			},
 			needsUpdate: true,
-			computed: kapi.ObjectMeta{
+			computed: metav1.ObjectMeta{
 				Name:            "foo",
 				Labels:          map[string]string{"labela": "a"},
 				Annotations:     map[string]string{"annotationa": "a"},
@@ -361,8 +364,8 @@ func TestComputeUnioningUsersAndGroups(t *testing.T) {
 	missingUser.Users = []string{"foo"}
 
 	tests := map[string]struct {
-		expected       kapi.SecurityContextConstraints
-		actual         kapi.SecurityContextConstraints
+		expected       securityapi.SecurityContextConstraints
+		actual         securityapi.SecurityContextConstraints
 		expectedGroups []string
 		expectedUsers  []string
 		needsUpdate    bool
@@ -454,8 +457,8 @@ func TestComputeUnioningPriorities(t *testing.T) {
 	priorityTwo := int32(2)
 
 	tests := map[string]struct {
-		expected         kapi.SecurityContextConstraints
-		actual           kapi.SecurityContextConstraints
+		expected         securityapi.SecurityContextConstraints
+		actual           securityapi.SecurityContextConstraints
 		expectedPriority *int32
 		needsUpdate      bool
 		union            bool
@@ -562,28 +565,28 @@ func TestComputeUnioningPriorities(t *testing.T) {
 	}
 }
 
-func goodSCCWithPriority(priority int32) kapi.SecurityContextConstraints {
+func goodSCCWithPriority(priority int32) securityapi.SecurityContextConstraints {
 	scc := goodSCC()
 	scc.Priority = &priority
 	return scc
 }
 
-func goodSCC() kapi.SecurityContextConstraints {
-	return kapi.SecurityContextConstraints{
-		ObjectMeta: kapi.ObjectMeta{
+func goodSCC() securityapi.SecurityContextConstraints {
+	return securityapi.SecurityContextConstraints{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: "scc-admin",
 		},
-		RunAsUser: kapi.RunAsUserStrategyOptions{
-			Type: kapi.RunAsUserStrategyRunAsAny,
+		RunAsUser: securityapi.RunAsUserStrategyOptions{
+			Type: securityapi.RunAsUserStrategyRunAsAny,
 		},
-		SELinuxContext: kapi.SELinuxContextStrategyOptions{
-			Type: kapi.SELinuxStrategyRunAsAny,
+		SELinuxContext: securityapi.SELinuxContextStrategyOptions{
+			Type: securityapi.SELinuxStrategyRunAsAny,
 		},
-		FSGroup: kapi.FSGroupStrategyOptions{
-			Type: kapi.FSGroupStrategyRunAsAny,
+		FSGroup: securityapi.FSGroupStrategyOptions{
+			Type: securityapi.FSGroupStrategyRunAsAny,
 		},
-		SupplementalGroups: kapi.SupplementalGroupsStrategyOptions{
-			Type: kapi.SupplementalGroupsStrategyRunAsAny,
+		SupplementalGroups: securityapi.SupplementalGroupsStrategyOptions{
+			Type: securityapi.SupplementalGroupsStrategyRunAsAny,
 		},
 		Users:  []string{"user"},
 		Groups: []string{"group"},

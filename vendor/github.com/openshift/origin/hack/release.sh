@@ -11,17 +11,18 @@ if [[ -z "${tag}" ]]; then
   fi
   tag="$( git tag --points-at HEAD )"
 elif [[ "$( git rev-parse "${tag}" )" != "$( git rev-parse HEAD )" ]]; then
-  os::log::warn "You are running a version of hack/release.sh that does not match OS_TAG - images may not be build correctly"
+  os::log::warning "You are running a version of hack/release.sh that does not match OS_TAG - images may not be build correctly"
 fi
 commit="$( git rev-parse ${tag} )"
 
-# Ensure that the build is using the latest release image
-docker pull "${OS_BUILD_ENV_IMAGE}"
+# Ensure that the build is using the latest release image and base content
+if [[ -z "${OS_RELEASE_STALE}" ]]; then
+  docker pull "${OS_BUILD_ENV_IMAGE}"
+  hack/build-base-images.sh
+fi
 
-hack/build-base-images.sh
-OS_GIT_COMMIT="${commit}" hack/build-release.sh
-hack/build-images.sh
-OS_PUSH_TAG="${tag}" OS_TAG="" OS_PUSH_LOCAL="1" hack/push-release.sh
+hack/env OS_GIT_COMMIT="${commit}" make official-release
+OS_PUSH_ALWAYS=1 OS_PUSH_TAG="${tag}" OS_TAG="" OS_PUSH_LOCAL="1" hack/push-release.sh
 
 echo
 echo "Pushed ${tag} to DockerHub"

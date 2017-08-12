@@ -21,9 +21,9 @@ import (
 
 	"github.com/fabric8io/gofabric8/client"
 	"github.com/fabric8io/gofabric8/util"
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/spf13/cobra"
-	"k8s.io/kubernetes/pkg/api"
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
 
@@ -114,13 +114,13 @@ func (p *cleanUpMavenLocalRepoFlags) cleanMavenLocalRepo(f cmdutil.Factory) erro
 		},
 	}
 	create := false
-	bc, err := oc.BuildConfigs(userNS).Get(cleanMavenLocalRepoJob)
+	bc, err := oc.BuildConfigs(userNS).Get(cleanMavenLocalRepoJob, apim.GetOptions{})
 	if err != nil {
 		create = true
 	}
 	if create {
 		newBC := buildapi.BuildConfig{
-			ObjectMeta: api.ObjectMeta{
+			ObjectMeta: apim.ObjectMeta{
 				Namespace: userNS,
 				Name:      cleanMavenLocalRepoJob,
 			},
@@ -140,7 +140,7 @@ func (p *cleanUpMavenLocalRepoFlags) cleanMavenLocalRepo(f cmdutil.Factory) erro
 	time.Sleep(time.Second * 2)
 
 	request := buildapi.BuildRequest{
-		ObjectMeta: api.ObjectMeta{
+		ObjectMeta: apim.ObjectMeta{
 			Name: cleanMavenLocalRepoJob,
 		},
 	}

@@ -3,14 +3,16 @@ package etcd
 import (
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	etcdtesting "k8s.io/apiserver/pkg/storage/etcd/testing"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/registry/registrytest"
-	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
 
-	"github.com/openshift/origin/pkg/build/api"
-	_ "github.com/openshift/origin/pkg/build/api/install"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	_ "github.com/openshift/origin/pkg/build/apis/build/install"
 	"github.com/openshift/origin/pkg/build/registry/buildconfig"
 	"github.com/openshift/origin/pkg/util/restoptions"
 )
@@ -29,21 +31,21 @@ func TestStorage(t *testing.T) {
 	buildconfig.NewRegistry(storage)
 }
 
-func validBuildConfig() *api.BuildConfig {
-	return &api.BuildConfig{
-		ObjectMeta: kapi.ObjectMeta{Name: "configid"},
-		Spec: api.BuildConfigSpec{
-			RunPolicy: api.BuildRunPolicySerial,
-			CommonSpec: api.CommonSpec{
-				Source: api.BuildSource{
-					Git: &api.GitBuildSource{
+func validBuildConfig() *buildapi.BuildConfig {
+	return &buildapi.BuildConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "configid"},
+		Spec: buildapi.BuildConfigSpec{
+			RunPolicy: buildapi.BuildRunPolicySerial,
+			CommonSpec: buildapi.CommonSpec{
+				Source: buildapi.BuildSource{
+					Git: &buildapi.GitBuildSource{
 						URI: "http://github.com/my/repository",
 					},
 				},
-				Strategy: api.BuildStrategy{
-					DockerStrategy: &api.DockerBuildStrategy{},
+				Strategy: buildapi.BuildStrategy{
+					DockerStrategy: &buildapi.DockerBuildStrategy{},
 				},
-				Output: api.BuildOutput{
+				Output: buildapi.BuildOutput{
 					To: &kapi.ObjectReference{
 						Kind: "DockerImage",
 						Name: "repository/data",
@@ -65,7 +67,29 @@ func TestCreate(t *testing.T) {
 	test.TestCreate(
 		valid,
 		// invalid
-		&api.BuildConfig{},
+		&buildapi.BuildConfig{},
+	)
+}
+
+func TestUpdate(t *testing.T) {
+	storage, server := newStorage(t)
+	defer server.Terminate(t)
+	defer storage.Store.DestroyFunc()
+	test := registrytest.New(t, storage.Store)
+	test.TestUpdate(
+		validBuildConfig(),
+		// updateFunc
+		func(obj runtime.Object) runtime.Object {
+			object := obj.(*buildapi.BuildConfig)
+			object.Spec.CommonSpec.Source.Git.URI = "http://github.com/my/otherrepo"
+			return object
+		},
+		// invalid updateFunc
+		func(obj runtime.Object) runtime.Object {
+			object := obj.(*buildapi.BuildConfig)
+			object.Spec.CommonSpec.Source.Git.URI = ""
+			return object
+		},
 	)
 }
 

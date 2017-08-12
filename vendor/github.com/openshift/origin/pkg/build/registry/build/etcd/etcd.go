@@ -1,15 +1,14 @@
 package etcd
 
 import (
+	"k8s.io/apimachinery/pkg/runtime"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
+	"k8s.io/apiserver/pkg/registry/generic"
+	"k8s.io/apiserver/pkg/registry/generic/registry"
+	"k8s.io/apiserver/pkg/registry/rest"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/rest"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
-	"k8s.io/kubernetes/pkg/registry/generic/registry"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/storage"
 
-	"github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/registry/build"
 	"github.com/openshift/origin/pkg/util/restoptions"
 )
@@ -20,24 +19,20 @@ type REST struct {
 
 // NewREST returns a RESTStorage object that will work against Build objects.
 func NewREST(optsGetter restoptions.Getter) (*REST, *DetailsREST, error) {
-
 	store := &registry.Store{
-		NewFunc:           func() runtime.Object { return &api.Build{} },
-		NewListFunc:       func() runtime.Object { return &api.BuildList{} },
-		QualifiedResource: api.Resource("builds"),
-		ObjectNameFunc: func(obj runtime.Object) (string, error) {
-			return obj.(*api.Build).Name, nil
-		},
-		PredicateFunc: func(label labels.Selector, field fields.Selector) storage.SelectionPredicate {
-			return build.Matcher(label, field)
-		},
-		CreateStrategy:      build.Strategy,
-		UpdateStrategy:      build.Strategy,
-		DeleteStrategy:      build.Strategy,
-		ReturnDeletedObject: false,
+		Copier:            kapi.Scheme,
+		NewFunc:           func() runtime.Object { return &buildapi.Build{} },
+		NewListFunc:       func() runtime.Object { return &buildapi.BuildList{} },
+		PredicateFunc:     build.Matcher,
+		QualifiedResource: buildapi.Resource("builds"),
+
+		CreateStrategy: build.Strategy,
+		UpdateStrategy: build.Strategy,
+		DeleteStrategy: build.Strategy,
 	}
 
-	if err := restoptions.ApplyOptions(optsGetter, store, true, storage.NoTriggerPublisher); err != nil {
+	options := &generic.StoreOptions{RESTOptions: optsGetter, AttrFunc: build.GetAttrs}
+	if err := store.CompleteWithOptions(options); err != nil {
 		return nil, nil, err
 	}
 
@@ -57,6 +52,6 @@ func (r *DetailsREST) New() runtime.Object {
 }
 
 // Update finds a resource in the storage and updates it.
-func (r *DetailsREST) Update(ctx kapi.Context, name string, objInfo rest.UpdatedObjectInfo) (runtime.Object, bool, error) {
+func (r *DetailsREST) Update(ctx apirequest.Context, name string, objInfo rest.UpdatedObjectInfo) (runtime.Object, bool, error) {
 	return r.store.Update(ctx, name, objInfo)
 }

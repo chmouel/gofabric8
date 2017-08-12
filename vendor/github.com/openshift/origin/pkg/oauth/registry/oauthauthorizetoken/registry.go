@@ -1,22 +1,24 @@
 package oauthauthorizetoken
 
 import (
-	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/rest"
+	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
+	"k8s.io/apiserver/pkg/registry/rest"
 
-	"github.com/openshift/origin/pkg/oauth/api"
+	oauthapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
 )
 
 // Registry is an interface for things that know how to store AuthorizeToken objects.
 type Registry interface {
 	// ListAuthorizeTokens obtains a list of authorize tokens that match a selector.
-	ListAuthorizeTokens(ctx kapi.Context, options *kapi.ListOptions) (*api.OAuthAuthorizeTokenList, error)
+	ListAuthorizeTokens(ctx apirequest.Context, options *metainternal.ListOptions) (*oauthapi.OAuthAuthorizeTokenList, error)
 	// GetAuthorizeToken retrieves a specific authorize token.
-	GetAuthorizeToken(ctx kapi.Context, name string) (*api.OAuthAuthorizeToken, error)
+	GetAuthorizeToken(ctx apirequest.Context, name string, options *metav1.GetOptions) (*oauthapi.OAuthAuthorizeToken, error)
 	// CreateAuthorizeToken creates a new authorize token.
-	CreateAuthorizeToken(ctx kapi.Context, token *api.OAuthAuthorizeToken) (*api.OAuthAuthorizeToken, error)
+	CreateAuthorizeToken(ctx apirequest.Context, token *oauthapi.OAuthAuthorizeToken) (*oauthapi.OAuthAuthorizeToken, error)
 	// DeleteAuthorizeToken deletes an authorize token.
-	DeleteAuthorizeToken(ctx kapi.Context, name string) error
+	DeleteAuthorizeToken(ctx apirequest.Context, name string) error
 }
 
 // Storage is an interface for a standard REST Storage backend
@@ -38,32 +40,32 @@ func NewRegistry(s Storage) Registry {
 	return &storage{s}
 }
 
-func (s *storage) ListAuthorizeTokens(ctx kapi.Context, options *kapi.ListOptions) (*api.OAuthAuthorizeTokenList, error) {
+func (s *storage) ListAuthorizeTokens(ctx apirequest.Context, options *metainternal.ListOptions) (*oauthapi.OAuthAuthorizeTokenList, error) {
 	obj, err := s.List(ctx, options)
 	if err != nil {
 		return nil, err
 	}
-	return obj.(*api.OAuthAuthorizeTokenList), nil
+	return obj.(*oauthapi.OAuthAuthorizeTokenList), nil
 }
 
-func (s *storage) GetAuthorizeToken(ctx kapi.Context, name string) (*api.OAuthAuthorizeToken, error) {
-	obj, err := s.Get(ctx, name)
+func (s *storage) GetAuthorizeToken(ctx apirequest.Context, name string, options *metav1.GetOptions) (*oauthapi.OAuthAuthorizeToken, error) {
+	obj, err := s.Get(ctx, name, options)
 	if err != nil {
 		return nil, err
 	}
-	return obj.(*api.OAuthAuthorizeToken), nil
+	return obj.(*oauthapi.OAuthAuthorizeToken), nil
 }
 
-func (s *storage) CreateAuthorizeToken(ctx kapi.Context, token *api.OAuthAuthorizeToken) (*api.OAuthAuthorizeToken, error) {
+func (s *storage) CreateAuthorizeToken(ctx apirequest.Context, token *oauthapi.OAuthAuthorizeToken) (*oauthapi.OAuthAuthorizeToken, error) {
 	obj, err := s.Create(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	return obj.(*api.OAuthAuthorizeToken), nil
+	return obj.(*oauthapi.OAuthAuthorizeToken), nil
 }
 
-func (s *storage) DeleteAuthorizeToken(ctx kapi.Context, name string) error {
-	_, err := s.Delete(ctx, name, nil)
+func (s *storage) DeleteAuthorizeToken(ctx apirequest.Context, name string) error {
+	_, _, err := s.Delete(ctx, name, nil)
 	if err != nil {
 		return err
 	}

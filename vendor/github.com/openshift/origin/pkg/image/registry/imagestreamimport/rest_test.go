@@ -3,11 +3,12 @@ package imagestreamimport
 import (
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/runtime"
 
-	"github.com/openshift/origin/pkg/image/api"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 )
 
 type fakeImageCreater struct{}
@@ -16,29 +17,29 @@ func (_ fakeImageCreater) New() runtime.Object {
 	return nil
 }
 
-func (_ fakeImageCreater) Create(ctx kapi.Context, obj runtime.Object) (runtime.Object, error) {
+func (_ fakeImageCreater) Create(ctx apirequest.Context, obj runtime.Object) (runtime.Object, error) {
 	return obj, nil
 }
 
 func TestImportSuccessful(t *testing.T) {
 	one := int64(1)
 	two := int64(2)
-	now := unversioned.Now()
+	now := metav1.Now()
 	tests := map[string]struct {
-		image    *api.Image
-		stream   *api.ImageStream
-		expected api.TagEvent
+		image    *imageapi.Image
+		stream   *imageapi.ImageStream
+		expected imageapi.TagEvent
 	}{
 		"reference differs": {
-			image: &api.Image{
-				ObjectMeta: kapi.ObjectMeta{
+			image: &imageapi.Image{
+				ObjectMeta: metav1.ObjectMeta{
 					Name: "image",
 				},
 				DockerImageReference: "registry.com/namespace/image:mytag",
 			},
-			stream: &api.ImageStream{
-				Spec: api.ImageStreamSpec{
-					Tags: map[string]api.TagReference{
+			stream: &imageapi.ImageStream{
+				Spec: imageapi.ImageStreamSpec{
+					Tags: map[string]imageapi.TagReference{
 						"mytag": {
 							Name: "mytag",
 							From: &kapi.ObjectReference{
@@ -49,10 +50,10 @@ func TestImportSuccessful(t *testing.T) {
 						},
 					},
 				},
-				Status: api.ImageStreamStatus{
-					Tags: map[string]api.TagEventList{
+				Status: imageapi.ImageStreamStatus{
+					Tags: map[string]imageapi.TagEventList{
 						"mytag": {
-							Items: []api.TagEvent{{
+							Items: []imageapi.TagEvent{{
 								DockerImageReference: "registry.com/namespace/image:othertag",
 								Image:                "image",
 								Generation:           one,
@@ -61,22 +62,22 @@ func TestImportSuccessful(t *testing.T) {
 					},
 				},
 			},
-			expected: api.TagEvent{
+			expected: imageapi.TagEvent{
 				DockerImageReference: "registry.com/namespace/image:mytag",
 				Image:                "image",
 				Generation:           two,
 			},
 		},
 		"image differs": {
-			image: &api.Image{
-				ObjectMeta: kapi.ObjectMeta{
+			image: &imageapi.Image{
+				ObjectMeta: metav1.ObjectMeta{
 					Name: "image",
 				},
 				DockerImageReference: "registry.com/namespace/image:mytag",
 			},
-			stream: &api.ImageStream{
-				Spec: api.ImageStreamSpec{
-					Tags: map[string]api.TagReference{
+			stream: &imageapi.ImageStream{
+				Spec: imageapi.ImageStreamSpec{
+					Tags: map[string]imageapi.TagReference{
 						"mytag": {
 							Name: "mytag",
 							From: &kapi.ObjectReference{
@@ -87,10 +88,10 @@ func TestImportSuccessful(t *testing.T) {
 						},
 					},
 				},
-				Status: api.ImageStreamStatus{
-					Tags: map[string]api.TagEventList{
+				Status: imageapi.ImageStreamStatus{
+					Tags: map[string]imageapi.TagEventList{
 						"mytag": {
-							Items: []api.TagEvent{{
+							Items: []imageapi.TagEvent{{
 								DockerImageReference: "registry.com/namespace/image:othertag",
 								Image:                "non-image",
 								Generation:           one,
@@ -99,7 +100,7 @@ func TestImportSuccessful(t *testing.T) {
 					},
 				},
 			},
-			expected: api.TagEvent{
+			expected: imageapi.TagEvent{
 				Created:              now,
 				DockerImageReference: "registry.com/namespace/image:mytag",
 				Image:                "image",
@@ -107,15 +108,15 @@ func TestImportSuccessful(t *testing.T) {
 			},
 		},
 		"empty status": {
-			image: &api.Image{
-				ObjectMeta: kapi.ObjectMeta{
+			image: &imageapi.Image{
+				ObjectMeta: metav1.ObjectMeta{
 					Name: "image",
 				},
 				DockerImageReference: "registry.com/namespace/image:mytag",
 			},
-			stream: &api.ImageStream{
-				Spec: api.ImageStreamSpec{
-					Tags: map[string]api.TagReference{
+			stream: &imageapi.ImageStream{
+				Spec: imageapi.ImageStreamSpec{
+					Tags: map[string]imageapi.TagReference{
 						"mytag": {
 							Name: "mytag",
 							From: &kapi.ObjectReference{
@@ -126,9 +127,9 @@ func TestImportSuccessful(t *testing.T) {
 						},
 					},
 				},
-				Status: api.ImageStreamStatus{},
+				Status: imageapi.ImageStreamStatus{},
 			},
-			expected: api.TagEvent{
+			expected: imageapi.TagEvent{
 				Created:              now,
 				DockerImageReference: "registry.com/namespace/image:mytag",
 				Image:                "image",
@@ -137,15 +138,15 @@ func TestImportSuccessful(t *testing.T) {
 		},
 		// https://github.com/openshift/origin/issues/10402:
 		"only generation differ": {
-			image: &api.Image{
-				ObjectMeta: kapi.ObjectMeta{
+			image: &imageapi.Image{
+				ObjectMeta: metav1.ObjectMeta{
 					Name: "image",
 				},
 				DockerImageReference: "registry.com/namespace/image:mytag",
 			},
-			stream: &api.ImageStream{
-				Spec: api.ImageStreamSpec{
-					Tags: map[string]api.TagReference{
+			stream: &imageapi.ImageStream{
+				Spec: imageapi.ImageStreamSpec{
+					Tags: map[string]imageapi.TagReference{
 						"mytag": {
 							Name: "mytag",
 							From: &kapi.ObjectReference{
@@ -156,10 +157,10 @@ func TestImportSuccessful(t *testing.T) {
 						},
 					},
 				},
-				Status: api.ImageStreamStatus{
-					Tags: map[string]api.TagEventList{
+				Status: imageapi.ImageStreamStatus{
+					Tags: map[string]imageapi.TagEventList{
 						"mytag": {
-							Items: []api.TagEvent{{
+							Items: []imageapi.TagEvent{{
 								DockerImageReference: "registry.com/namespace/image:mytag",
 								Image:                "image",
 								Generation:           one,
@@ -168,7 +169,7 @@ func TestImportSuccessful(t *testing.T) {
 					},
 				},
 			},
-			expected: api.TagEvent{
+			expected: imageapi.TagEvent{
 				DockerImageReference: "registry.com/namespace/image:mytag",
 				Image:                "image",
 				Generation:           two,
@@ -177,18 +178,19 @@ func TestImportSuccessful(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		ref, err := api.ParseDockerImageReference(test.image.DockerImageReference)
+		ref, err := imageapi.ParseDockerImageReference(test.image.DockerImageReference)
 		if err != nil {
 			t.Errorf("%s: error parsing image ref: %v", name, err)
 			continue
 		}
 
-		importPolicy := api.TagImportPolicy{}
+		importPolicy := imageapi.TagImportPolicy{}
+		referencePolicy := imageapi.TagReferencePolicy{Type: imageapi.SourceTagReferencePolicy}
 		importedImages := make(map[string]error)
-		updatedImages := make(map[string]*api.Image)
+		updatedImages := make(map[string]*imageapi.Image)
 		storage := REST{images: fakeImageCreater{}}
-		_, ok := storage.importSuccessful(kapi.NewDefaultContext(), test.image, test.stream,
-			ref.Tag, ref.Exact(), two, now, importPolicy, importedImages, updatedImages)
+		_, ok := storage.importSuccessful(apirequest.NewDefaultContext(), test.image, test.stream,
+			ref.Tag, ref.Exact(), two, now, importPolicy, referencePolicy, importedImages, updatedImages)
 		if !ok {
 			t.Errorf("%s: expected success, didn't get one", name)
 		}

@@ -3,8 +3,6 @@
 # Extended tests for logging in using GSSAPI
 source "$(dirname "${BASH_SOURCE}")/../../hack/lib/init.sh"
 
-starttime="$(date +%s)"
-
 project_name='gssapiproxy'
 test_name="test-extended/${project_name}"
 
@@ -12,7 +10,8 @@ os::build::setup_env
 
 os::util::environment::use_sudo
 os::util::environment::setup_time_vars
-os::util::environment::setup_all_server_vars "${test_name}"
+os::cleanup::tmpdir
+os::util::environment::setup_all_server_vars
 
 os::log::system::start
 
@@ -31,14 +30,11 @@ os::test::junit::declare_suite_start "${test_name}"
 os::cmd::expect_success_and_text 'oc version' 'GSSAPI Kerberos SPNEGO'
 
 function cleanup() {
-    out=$?
-    set +e
-    cleanup_openshift
-
-    os::test::junit::generate_oscmd_report
-
-    endtime=$(date +%s); echo "$0 took $((endtime - starttime)) seconds"
-    exit $out
+    return_code=$?
+    os::test::junit::generate_report
+    os::cleanup::all
+    os::util::describe_return_code "${return_code}"
+    exit "${return_code}"
 }
 trap "cleanup" EXIT
 
@@ -112,7 +108,7 @@ function update_auth_proxy_config() {
     spec+='{.items[0].status.conditions[?(@.type=="Ready")].status}'
 
     os::cmd::expect_success "oc set env dc/gssapiproxy-server SERVER='${server_config}'"
-    os::cmd::try_until_text "oc get pods -l deploymentconfig=gssapiproxy-server -o jsonpath='${spec}'" "^${server_config}_True$"
+    os::cmd::try_until_text "oc get pods -l deploymentconfig=gssapiproxy-server -o jsonpath='${spec}'" "^${server_config}_True$" $(( 10 * minute ))
 }
 
 function run_gssapi_tests() {

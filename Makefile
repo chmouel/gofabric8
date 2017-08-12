@@ -39,7 +39,7 @@ VENDOR_DIR=vendor
 TEAM_VERSION=$(shell cat TEAM_VERSION)
 
 all: build test
- 
+
 build: *.go */*.go fmt
 	rm -rf build
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(BUILDFLAGS) -o build/$(NAME) $(NAME).go
@@ -64,8 +64,10 @@ bootstrap: vendoring
 vendoring:
 	$(GO) get -u github.com/Masterminds/glide
 	GO15VENDOREXPERIMENT=1 glide update --strip-vendor
+	#NOTE(chmou): Use the shipped version from kube!
+	for i in vendor/k8s.io/kubernetes/staging/src/k8s.io/*;do rm -rf vendor/k8s.io/$(basename $i); ln -sf kubernetes/staging/src/k8s.io/$(basename $i) vendor/k8s.io/$(basename $i);done
 
-release: all 
+release: all
 	rm -rf build release && mkdir build release
 	for os in linux darwin ; do \
 		CGO_ENABLED=$(CGO_ENABLED) GOOS=$$os GOARCH=amd64 $(GO) build $(BUILDFLAGS) -o build/$(NAME)-$$os-amd64 $(NAME).go ; \

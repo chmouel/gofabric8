@@ -101,7 +101,7 @@ func (c *ClientJoinConfig) Complete(f *osclientcmd.Factory, cmd *cobra.Command) 
 	}
 
 	// Create an OpenShift configuration and start a container that uses it.
-	c.addTask("Joining OpenShift cluster", c.StartOpenShiftNode)
+	c.addTask(simpleTask("Joining OpenShift cluster", c.StartOpenShiftNode))
 
 	return nil
 }
@@ -111,7 +111,6 @@ func (c *ClientJoinConfig) StartOpenShiftNode(out io.Writer) error {
 	opt := &openshift.StartOptions{
 		ServerIP:           c.ServerIP,
 		UseSharedVolume:    !c.UseNsenterMount,
-		SetPropagationMode: c.SetPropagationMode,
 		Images:             c.imageFormat(),
 		HostVolumesDir:     c.HostVolumesDir,
 		HostConfigDir:      c.HostConfigDir,

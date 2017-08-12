@@ -3,10 +3,10 @@ package authorizer
 import (
 	"testing"
 
-	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/sets"
+	kauthorizer "k8s.io/apiserver/pkg/authorization/authorizer"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	testpolicyregistry "github.com/openshift/origin/pkg/authorization/registry/test"
 	"github.com/openshift/origin/pkg/authorization/rulevalidation"
 )
@@ -19,8 +19,7 @@ type subjectsTest struct {
 	policyRetrievalError  error
 	bindingRetrievalError error
 
-	context    kapi.Context
-	attributes *DefaultAuthorizationAttributes
+	attributes kauthorizer.AttributesRecord
 
 	expectedUsers  sets.String
 	expectedGroups sets.String
@@ -29,12 +28,32 @@ type subjectsTest struct {
 
 func TestSubjects(t *testing.T) {
 	test := &subjectsTest{
-		context: kapi.WithNamespace(kapi.NewContext(), "adze"),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			Namespace:       "adze",
+			Verb:            "get",
+			Resource:        "pods",
 		},
-		expectedUsers:  sets.NewString("Anna", "ClusterAdmin", "Ellen", "Valerie", "system:serviceaccount:adze:second", "system:serviceaccount:foo:default", "system:serviceaccount:other:first", "system:admin"),
+		expectedUsers: sets.NewString("Anna", "ClusterAdmin", "Ellen", "Valerie",
+			"system:serviceaccount:adze:second",
+			"system:serviceaccount:foo:default",
+			"system:serviceaccount:other:first",
+			"system:serviceaccount:kube-system:deployment-controller",
+			"system:serviceaccount:kube-system:endpoint-controller",
+			"system:serviceaccount:kube-system:generic-garbage-collector",
+			"system:serviceaccount:kube-system:namespace-controller",
+			"system:serviceaccount:kube-system:persistent-volume-binder",
+			"system:serviceaccount:kube-system:statefulset-controller",
+			"system:admin",
+			"system:kube-scheduler",
+			"system:serviceaccount:openshift-infra:build-controller",
+			"system:serviceaccount:openshift-infra:deployer-controller",
+			"system:serviceaccount:openshift-infra:template-instance-controller",
+			"system:serviceaccount:openshift-infra:template-instance-controller",
+			"system:serviceaccount:openshift-infra:build-controller",
+			"system:serviceaccount:openshift-infra:pv-recycler-controller",
+			"system:serviceaccount:openshift-infra:sdn-controller",
+		),
 		expectedGroups: sets.NewString("RootUsers", "system:cluster-admins", "system:cluster-readers", "system:masters", "system:nodes"),
 	}
 	test.clusterPolicies = newDefaultClusterPolicies()
@@ -51,9 +70,9 @@ func (test *subjectsTest) test(t *testing.T) {
 	clusterPolicyRegistry := testpolicyregistry.NewClusterPolicyRegistry(test.clusterPolicies, test.policyRetrievalError)
 	clusterPolicyBindingRegistry := testpolicyregistry.NewClusterPolicyBindingRegistry(test.clusterBindings, test.bindingRetrievalError)
 
-	authorizer := NewAuthorizer(rulevalidation.NewDefaultRuleResolver(policyRegistry, policyBindingRegistry, clusterPolicyRegistry, clusterPolicyBindingRegistry), NewForbiddenMessageResolver(""))
+	_, subjectLocator := NewAuthorizer(rulevalidation.NewDefaultRuleResolver(policyRegistry, policyBindingRegistry, clusterPolicyRegistry, clusterPolicyBindingRegistry), NewForbiddenMessageResolver(""))
 
-	actualUsers, actualGroups, actualError := authorizer.GetAllowedSubjects(test.context, *test.attributes)
+	actualUsers, actualGroups, actualError := subjectLocator.GetAllowedSubjects(test.attributes)
 
 	matchStringSlice(test.expectedUsers.List(), actualUsers.List(), "users", t)
 	matchStringSlice(test.expectedGroups.List(), actualGroups.List(), "groups", t)

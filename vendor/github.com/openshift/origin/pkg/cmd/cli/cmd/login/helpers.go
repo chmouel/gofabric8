@@ -11,15 +11,15 @@ import (
 	"os"
 
 	"github.com/openshift/origin/pkg/client"
-	"github.com/openshift/origin/pkg/user/api"
-	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/openshift/origin/pkg/cmd/util/term"
-	kapi "k8s.io/kubernetes/pkg/api"
-	kerrors "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/client/restclient"
-	kclientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
-	"k8s.io/kubernetes/pkg/util/sets"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	restclient "k8s.io/client-go/rest"
+	kclientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	kterm "k8s.io/kubernetes/pkg/util/term"
 )
 
@@ -124,10 +124,10 @@ func getHostPort(hostURL string) (string, string, *url.URL, error) {
 	return host, port, parsedURL, err
 }
 
-func whoAmI(clientConfig *restclient.Config) (*api.User, error) {
+func whoAmI(clientConfig *restclient.Config) (*userapi.User, error) {
 	client, err := client.New(clientConfig)
 
-	me, err := client.Users().Get("~")
+	me, err := client.Users().Get("~", metav1.GetOptions{})
 
 	// if we're talking to kube (or likely talking to kube),
 	if kerrors.IsNotFound(err) || kerrors.IsForbidden(err) {
@@ -135,10 +135,10 @@ func whoAmI(clientConfig *restclient.Config) (*api.User, error) {
 		case len(clientConfig.BearerToken) > 0:
 			// the user has already been willing to provide the token on the CLI, so they probably
 			// don't mind using it again if they switch to and from this user
-			return &api.User{ObjectMeta: kapi.ObjectMeta{Name: clientConfig.BearerToken}}, nil
+			return &userapi.User{ObjectMeta: metav1.ObjectMeta{Name: clientConfig.BearerToken}}, nil
 
 		case len(clientConfig.Username) > 0:
-			return &api.User{ObjectMeta: kapi.ObjectMeta{Name: clientConfig.Username}}, nil
+			return &userapi.User{ObjectMeta: metav1.ObjectMeta{Name: clientConfig.Username}}, nil
 
 		}
 	}

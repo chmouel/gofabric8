@@ -46,8 +46,11 @@ oadm-groups-sync.1
 oadm-groups.1
 oadm-ipfailover.1
 oadm-manage-node.1
+oadm-migrate-authorization.1
+oadm-migrate-etcd-ttl.1
 oadm-migrate-image-references.1
 oadm-migrate-storage.1
+oadm-migrate-volumesource.1
 oadm-migrate.1
 oadm-new-project.1
 oadm-options.1
@@ -91,5 +94,6 @@ oadm-top-node.1
 oadm-top-pod.1
 oadm-top.1
 oadm-uncordon.1
+oadm-verify-image-signature.1
 oadm-version.1
 oadm.1

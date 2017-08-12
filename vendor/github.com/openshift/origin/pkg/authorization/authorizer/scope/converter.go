@@ -4,24 +4,27 @@ import (
 	"fmt"
 	"strings"
 
+	kapierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/conversion"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	kutilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
+	kauthorizer "k8s.io/apiserver/pkg/authorization/authorizer"
 	kapi "k8s.io/kubernetes/pkg/api"
-	kapierrors "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/conversion"
-	kutilerrors "k8s.io/kubernetes/pkg/util/errors"
-	"k8s.io/kubernetes/pkg/util/sets"
+	kauthorizationapi "k8s.io/kubernetes/pkg/apis/authorization"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	"github.com/openshift/origin/pkg/authorization/authorizer"
-	"github.com/openshift/origin/pkg/client"
-	oauthapi "github.com/openshift/origin/pkg/oauth/api"
-	projectapi "github.com/openshift/origin/pkg/project/api"
-	userapi "github.com/openshift/origin/pkg/user/api"
+	authorizationlister "github.com/openshift/origin/pkg/authorization/generated/listers/authorization/internalversion"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
+	oauthapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
+	projectapi "github.com/openshift/origin/pkg/project/apis/project"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
 )
 
 // ScopesToRules takes the scopes and return the rules back.  We ALWAYS add the discovery rules and it is possible to get some rules and and
 // an error since errors aren't fatal to evaluation
-func ScopesToRules(scopes []string, namespace string, clusterPolicyGetter client.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
+func ScopesToRules(scopes []string, namespace string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
 	rules := append([]authorizationapi.PolicyRule{}, authorizationapi.DiscoveryRule)
 
 	errors := []error{}
@@ -51,7 +54,7 @@ func ScopesToRules(scopes []string, namespace string, clusterPolicyGetter client
 
 // ScopesToVisibleNamespaces returns a list of namespaces that the provided scopes have "get" access to.
 // This exists only to support efficiently list/watch of projects (ACLed namespaces)
-func ScopesToVisibleNamespaces(scopes []string, clusterPolicyGetter client.ClusterPolicyLister) (sets.String, error) {
+func ScopesToVisibleNamespaces(scopes []string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) (sets.String, error) {
 	if len(scopes) == 0 {
 		return sets.NewString("*"), nil
 	}
@@ -98,8 +101,8 @@ type ScopeEvaluator interface {
 	// Describe returns a description, warning (typically used to warn about escalation dangers), or an error if the scope is malformed
 	Describe(scope string) (description string, warning string, err error)
 	// ResolveRules returns the policy rules that this scope allows
-	ResolveRules(scope, namespace string, clusterPolicyGetter client.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error)
-	ResolveGettableNamespaces(scope string, clusterPolicyGetter client.ClusterPolicyLister) ([]string, error)
+	ResolveRules(scope, namespace string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error)
+	ResolveGettableNamespaces(scope string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]string, error)
 }
 
 // ScopeEvaluators map prefixes to a function that handles that prefix
@@ -132,6 +135,22 @@ const (
 	UserFull = UserIndicator + "full"
 )
 
+var defaultSupportedScopesMap = map[string]string{
+	UserInfo:               "Read-only access to your user information (including username, identities, and group membership)",
+	UserAccessCheck:        `Read-only access to view your privileges (for example, "can I create builds?")`,
+	UserListScopedProjects: `Read-only access to list your projects viewable with this token and view their metadata (display name, description, etc.)`,
+	UserListAllProjects:    `Read-only access to list your projects and view their metadata (display name, description, etc.)`,
+	UserFull:               `Full read/write access with all of your permissions`,
+}
+
+func DefaultSupportedScopes() []string {
+	return sets.StringKeySet(defaultSupportedScopesMap).List()
+}
+
+func DefaultSupportedScopesMap() map[string]string {
+	return defaultSupportedScopesMap
+}
+
 // user:<scope name>
 type userEvaluator struct{}
 
@@ -150,39 +169,33 @@ func (userEvaluator) Validate(scope string) error {
 
 func (userEvaluator) Describe(scope string) (string, string, error) {
 	switch scope {
-	case UserInfo:
-		return "Read-only access to your user information (including username, identities, and group membership)", "", nil
-	case UserAccessCheck:
-		return `Read-only access to view your privileges (for example, "can I create builds?")`, "", nil
-	case UserListScopedProjects:
-		return `Read-only access to list your projects viewable with this token and view their metadata (display name, description, etc.)`, "", nil
-	case UserListAllProjects:
-		return `Read-only access to list your projects and view their metadata (display name, description, etc.)`, "", nil
+	case UserInfo, UserAccessCheck, UserListScopedProjects, UserListAllProjects:
+		return defaultSupportedScopesMap[scope], "", nil
 	case UserFull:
-		return `Full read/write access with all of your permissions`, `Includes any access you have to escalating resources like secrets`, nil
+		return defaultSupportedScopesMap[scope], `Includes any access you have to escalating resources like secrets`, nil
 	default:
 		return "", "", fmt.Errorf("unrecognized scope: %v", scope)
 	}
 }
 
-func (userEvaluator) ResolveRules(scope, namespace string, clusterPolicyGetter client.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
+func (userEvaluator) ResolveRules(scope, namespace string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
 	switch scope {
 	case UserInfo:
 		return []authorizationapi.PolicyRule{
-			{Verbs: sets.NewString("get"), APIGroups: []string{userapi.GroupName}, Resources: sets.NewString("users"), ResourceNames: sets.NewString("~")},
+			{Verbs: sets.NewString("get"), APIGroups: []string{userapi.GroupName, userapi.LegacyGroupName}, Resources: sets.NewString("users"), ResourceNames: sets.NewString("~")},
 		}, nil
 	case UserAccessCheck:
 		return []authorizationapi.PolicyRule{
-			{Verbs: sets.NewString("create"), APIGroups: []string{authorizationapi.GroupName}, Resources: sets.NewString("subjectaccessreviews", "localsubjectaccessreviews"), AttributeRestrictions: &authorizationapi.IsPersonalSubjectAccessReview{}},
-			authorizationapi.NewRule("create").Groups(authorizationapi.GroupName).Resources("selfsubjectrulesreviews").RuleOrDie(),
+			authorizationapi.NewRule("create").Groups(kauthorizationapi.GroupName).Resources("selfsubjectaccessreviews").RuleOrDie(),
+			authorizationapi.NewRule("create").Groups(authorizationapi.GroupName, authorizationapi.LegacyGroupName).Resources("selfsubjectrulesreviews").RuleOrDie(),
 		}, nil
 	case UserListScopedProjects:
 		return []authorizationapi.PolicyRule{
-			{Verbs: sets.NewString("list", "watch"), APIGroups: []string{projectapi.GroupName}, Resources: sets.NewString("projects")},
+			{Verbs: sets.NewString("list", "watch"), APIGroups: []string{projectapi.GroupName, projectapi.LegacyGroupName}, Resources: sets.NewString("projects")},
 		}, nil
 	case UserListAllProjects:
 		return []authorizationapi.PolicyRule{
-			{Verbs: sets.NewString("list", "watch"), APIGroups: []string{projectapi.GroupName}, Resources: sets.NewString("projects")},
+			{Verbs: sets.NewString("list", "watch"), APIGroups: []string{projectapi.GroupName, projectapi.LegacyGroupName}, Resources: sets.NewString("projects")},
 			{Verbs: sets.NewString("get"), APIGroups: []string{kapi.GroupName}, Resources: sets.NewString("namespaces")},
 		}, nil
 	case UserFull:
@@ -195,7 +208,7 @@ func (userEvaluator) ResolveRules(scope, namespace string, clusterPolicyGetter c
 	}
 }
 
-func (userEvaluator) ResolveGettableNamespaces(scope string, clusterPolicyGetter client.ClusterPolicyLister) ([]string, error) {
+func (userEvaluator) ResolveGettableNamespaces(scope string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]string, error) {
 	switch scope {
 	case UserFull, UserListAllProjects:
 		return []string{"*"}, nil
@@ -205,12 +218,29 @@ func (userEvaluator) ResolveGettableNamespaces(scope string, clusterPolicyGetter
 }
 
 // escalatingScopeResources are resources that are considered escalating for scope evaluation
-var escalatingScopeResources = []unversioned.GroupResource{
+var escalatingScopeResources = []schema.GroupResource{
 	{Group: kapi.GroupName, Resource: "secrets"},
-	/*imageapi.GroupName*/ {Group: "", Resource: "imagestreams/secrets"},
-	/*oauthapi.GroupName*/ {Group: "", Resource: "oauthauthorizetokens"}, {Group: "", Resource: "oauthaccesstokens"},
-	/*authorizationapi.GroupName*/ {Group: "", Resource: "roles"}, {Group: "", Resource: "rolebindings"},
-	/*authorizationapi.GroupName*/ {Group: "", Resource: "clusterroles"}, {Group: "", Resource: "clusterrolebindings"},
+
+	{Group: imageapi.GroupName, Resource: "imagestreams/secrets"},
+	{Group: imageapi.LegacyGroupName, Resource: "imagestreams/secrets"},
+
+	{Group: oauthapi.GroupName, Resource: "oauthauthorizetokens"},
+	{Group: oauthapi.LegacyGroupName, Resource: "oauthauthorizetokens"},
+
+	{Group: oauthapi.GroupName, Resource: "oauthaccesstokens"},
+	{Group: oauthapi.LegacyGroupName, Resource: "oauthaccesstokens"},
+
+	{Group: authorizationapi.GroupName, Resource: "roles"},
+	{Group: authorizationapi.LegacyGroupName, Resource: "roles"},
+
+	{Group: authorizationapi.GroupName, Resource: "rolebindings"},
+	{Group: authorizationapi.LegacyGroupName, Resource: "rolebindings"},
+
+	{Group: authorizationapi.GroupName, Resource: "clusterroles"},
+	{Group: authorizationapi.LegacyGroupName, Resource: "clusterroles"},
+
+	{Group: authorizationapi.GroupName, Resource: "clusterrolebindings"},
+	{Group: authorizationapi.LegacyGroupName, Resource: "clusterrolebindings"},
 }
 
 // role:<clusterrole name>:<namespace to allow the cluster role, * means all>
@@ -288,7 +318,7 @@ func (e clusterRoleEvaluator) Describe(scope string) (string, string, error) {
 	return description, warning, nil
 }
 
-func (e clusterRoleEvaluator) ResolveRules(scope, namespace string, clusterPolicyGetter client.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
+func (e clusterRoleEvaluator) ResolveRules(scope, namespace string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
 	_, scopeNamespace, _, err := e.parseScope(scope)
 	if err != nil {
 		return nil, err
@@ -303,7 +333,7 @@ func (e clusterRoleEvaluator) ResolveRules(scope, namespace string, clusterPolic
 }
 
 // resolveRules doesn't enforce namespace checks
-func (e clusterRoleEvaluator) resolveRules(scope string, clusterPolicyGetter client.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
+func (e clusterRoleEvaluator) resolveRules(scope string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]authorizationapi.PolicyRule, error) {
 	roleName, _, escalating, err := e.parseScope(scope)
 	if err != nil {
 		return nil, err
@@ -315,7 +345,7 @@ func (e clusterRoleEvaluator) resolveRules(scope string, clusterPolicyGetter cli
 	}
 	role, exists := policy.Roles[roleName]
 	if !exists {
-		return nil, kapierrors.NewNotFound(authorizationapi.Resource("clusterrole"), roleName)
+		return nil, kapierrors.NewNotFound(authorizationapi.LegacyResource("clusterrole"), roleName)
 	}
 
 	rules := []authorizationapi.PolicyRule{}
@@ -337,7 +367,7 @@ func (e clusterRoleEvaluator) resolveRules(scope string, clusterPolicyGetter cli
 	return rules, nil
 }
 
-func (e clusterRoleEvaluator) ResolveGettableNamespaces(scope string, clusterPolicyGetter client.ClusterPolicyLister) ([]string, error) {
+func (e clusterRoleEvaluator) ResolveGettableNamespaces(scope string, clusterPolicyGetter authorizationlister.ClusterPolicyLister) ([]string, error) {
 	_, scopeNamespace, _, err := e.parseScope(scope)
 	if err != nil {
 		return nil, err
@@ -347,15 +377,16 @@ func (e clusterRoleEvaluator) ResolveGettableNamespaces(scope string, clusterPol
 		return nil, err
 	}
 
-	attributes := authorizer.DefaultAuthorizationAttributes{
-		APIGroup: kapi.GroupName,
-		Verb:     "get",
-		Resource: "namespaces",
+	attributes := kauthorizer.AttributesRecord{
+		APIGroup:        kapi.GroupName,
+		Verb:            "get",
+		Resource:        "namespaces",
+		ResourceRequest: true,
 	}
 
 	errors := []error{}
 	for _, rule := range rules {
-		matches, err := attributes.RuleMatches(rule)
+		matches, err := authorizer.RuleMatches(attributes, rule)
 		if err != nil {
 			errors = append(errors, err)
 			continue
@@ -388,7 +419,7 @@ func removeEscalatingResources(in authorizationapi.PolicyRule) authorizationapi.
 			// we're using a cache of cache of an object that uses pointers to data.  I'm pretty sure we need to do a copy to avoid
 			// muddying the cache
 			ruleCopy = &authorizationapi.PolicyRule{}
-			authorizationapi.DeepCopy_api_PolicyRule(&in, ruleCopy, localCloner)
+			authorizationapi.DeepCopy_authorization_PolicyRule(&in, ruleCopy, localCloner)
 		}
 
 		ruleCopy.Resources.Delete(resource.Resource)

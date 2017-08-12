@@ -8,27 +8,28 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/pflag"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/registry/core/controller"
 	"k8s.io/kubernetes/pkg/registry/core/endpoint"
 	"k8s.io/kubernetes/pkg/registry/core/namespace"
 	"k8s.io/kubernetes/pkg/registry/core/node"
 	"k8s.io/kubernetes/pkg/registry/core/persistentvolume"
 	"k8s.io/kubernetes/pkg/registry/core/persistentvolumeclaim"
 	"k8s.io/kubernetes/pkg/registry/core/pod"
+	"k8s.io/kubernetes/pkg/registry/core/replicationcontroller"
 	"k8s.io/kubernetes/pkg/registry/core/resourcequota"
 	"k8s.io/kubernetes/pkg/registry/core/secret"
 	"k8s.io/kubernetes/pkg/registry/core/serviceaccount"
-	"k8s.io/kubernetes/pkg/runtime"
 
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	buildrest "github.com/openshift/origin/pkg/build/registry/build"
 	buildconfigrest "github.com/openshift/origin/pkg/build/registry/buildconfig"
-	deployapi "github.com/openshift/origin/pkg/deploy/api"
+	deployapi "github.com/openshift/origin/pkg/deploy/apis/apps"
 	deployrest "github.com/openshift/origin/pkg/deploy/registry/deployconfig"
-	imageapi "github.com/openshift/origin/pkg/image/api"
-	routeapi "github.com/openshift/origin/pkg/route/api"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
+	routeapi "github.com/openshift/origin/pkg/route/apis/route"
 	osautil "github.com/openshift/origin/pkg/serviceaccounts/util"
 )
 
@@ -44,12 +45,12 @@ type DefaultExporter struct{}
 func (e *DefaultExporter) AddExportOptions(flags *pflag.FlagSet) {
 }
 
-func exportObjectMeta(objMeta *kapi.ObjectMeta, exact bool) {
+func exportObjectMeta(objMeta *metav1.ObjectMeta, exact bool) {
 	objMeta.UID = ""
 	if !exact {
 		objMeta.Namespace = ""
 	}
-	objMeta.CreationTimestamp = unversioned.Time{}
+	objMeta.CreationTimestamp = metav1.Time{}
 	objMeta.DeletionTimestamp = nil
 	objMeta.ResourceVersion = ""
 	objMeta.SelfLink = ""
@@ -59,12 +60,12 @@ func exportObjectMeta(objMeta *kapi.ObjectMeta, exact bool) {
 }
 
 func (e *DefaultExporter) Export(obj runtime.Object, exact bool) error {
-	if meta, err := kapi.ObjectMetaFor(obj); err == nil {
+	if meta, err := metav1.ObjectMetaFor(obj); err == nil {
 		exportObjectMeta(meta, exact)
 	} else {
 		glog.V(4).Infof("Object of type %v does not have ObjectMeta: %v", reflect.TypeOf(obj), err)
 	}
-	ctx := kapi.NewContext()
+	ctx := apirequest.NewContext()
 
 	switch t := obj.(type) {
 	case *kapi.Endpoints:
@@ -89,7 +90,7 @@ func (e *DefaultExporter) Export(obj runtime.Object, exact bool) error {
 	case *kapi.PersistentVolume:
 		persistentvolume.Strategy.PrepareForCreate(ctx, obj)
 	case *kapi.ReplicationController:
-		controller.Strategy.PrepareForCreate(ctx, obj)
+		replicationcontroller.Strategy.PrepareForCreate(ctx, obj)
 	case *kapi.Pod:
 		pod.Strategy.PrepareForCreate(ctx, obj)
 	case *kapi.PodTemplate:
@@ -147,7 +148,10 @@ func (e *DefaultExporter) Export(obj runtime.Object, exact bool) error {
 		return deployrest.Strategy.Export(ctx, obj, exact)
 
 	case *buildapi.BuildConfig:
-		buildconfigrest.Strategy.PrepareForCreate(ctx, obj)
+		// Use the legacy strategy to avoid setting prune defaults if
+		// the object wasn't created with them in the first place.
+		// TODO: use the exportstrategy pattern instead.
+		buildconfigrest.LegacyStrategy.PrepareForCreate(ctx, obj)
 		// TODO: should be handled by prepare for create
 		t.Status.LastVersion = 0
 		for i := range t.Spec.Triggers {

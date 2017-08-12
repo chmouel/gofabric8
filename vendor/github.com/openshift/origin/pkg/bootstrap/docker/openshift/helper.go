@@ -1,20 +1,23 @@
 package openshift
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	docker "github.com/fsouza/go-dockerclient"
+	"github.com/blang/semver"
 	"github.com/golang/glog"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/homedir"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/util/homedir"
 
 	"github.com/openshift/origin/pkg/bootstrap/docker/dockerhelper"
 	"github.com/openshift/origin/pkg/bootstrap/docker/errors"
@@ -23,21 +26,39 @@ import (
 	"github.com/openshift/origin/pkg/bootstrap/docker/run"
 	defaultsapi "github.com/openshift/origin/pkg/build/admission/defaults/api"
 	cliconfig "github.com/openshift/origin/pkg/cmd/cli/config"
+	"github.com/openshift/origin/pkg/cmd/server/admin"
 	configapi "github.com/openshift/origin/pkg/cmd/server/api"
 	_ "github.com/openshift/origin/pkg/cmd/server/api/install"
 	configapilatest "github.com/openshift/origin/pkg/cmd/server/api/latest"
+	"github.com/openshift/origin/pkg/cmd/server/crypto"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
+	kclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 )
 
 const (
-	initialStatusCheckWait = 4 * time.Second
-	serverUpTimeout        = 35
-	serverConfigPath       = "/var/lib/origin/openshift.local.config"
-	serverMasterConfig     = serverConfigPath + "/master/master-config.yaml"
-	DefaultDNSPort         = 53
-	AlternateDNSPort       = 8053
-	cmdDetermineNodeHost   = "for name in %s; do ls /var/lib/origin/openshift.local.config/node-$name &> /dev/null && echo $name && break; done"
-	OpenShiftContainer     = "origin"
+	defaultNodeName             = "localhost"
+	initialStatusCheckWait      = 4 * time.Second
+	serverUpTimeout             = 35
+	serverConfigPath            = "/var/lib/origin/openshift.local.config"
+	serverMasterConfig          = serverConfigPath + "/master/master-config.yaml"
+	serverNodeConfig            = serverConfigPath + "/node-" + defaultNodeName + "/node-config.yaml"
+	serviceCatalogExtensionPath = serverConfigPath + "/master/servicecatalog-extension.js"
+	aggregatorKey               = "aggregator-front-proxy.key"
+	aggregatorCert              = "aggregator-front-proxy.crt"
+	aggregatorCACert            = "front-proxy-ca.crt"
+	aggregatorCAKey             = "front-proxy-ca.key"
+	aggregatorCASerial          = "frontend-proxy-ca.serial.txt"
+	aggregatorKeyPath           = serverConfigPath + "/master/" + aggregatorKey
+	aggregatorCertPath          = serverConfigPath + "/master/" + aggregatorCert
+	aggregatorCACertPath        = serverConfigPath + "/master/" + aggregatorCACert
+	aggregatorCAKeyPath         = serverConfigPath + "/master/" + aggregatorCAKey
+	aggregatorCASerialPath      = serverConfigPath + "/master/" + aggregatorCASerial
+	DefaultDNSPort              = 53
+	AlternateDNSPort            = 8053
+	cmdDetermineNodeHost        = "for name in %s; do ls /var/lib/origin/openshift.local.config/node-$name &> /dev/null && echo $name && break; done"
+	OpenShiftContainer          = "origin"
+	OpenshiftNamespace          = "openshift"
+	OpenshiftInfraNamespace     = "openshift-infra"
 )
 
 var (
@@ -54,30 +75,46 @@ var (
 	PortsWithAlternateDNS = append(BasePorts, AlternateDNSPort)
 	AllPorts              = append(append(RouterPorts, DefaultPorts...), AlternateDNSPort)
 	SocatPidFile          = filepath.Join(homedir.HomeDir(), cliconfig.OpenShiftConfigHomeDir, "socat-8443.pid")
+	defaultCertHosts      = []string{
+		"127.0.0.1",
+		"172.30.0.1",
+		"localhost",
+		"kubernetes",
+		"kubernetes.default",
+		"kubernetes.default.svc",
+		"kubernetes.default.svc.cluster.local",
+		"openshift",
+		"openshift.default",
+		"openshift.default.svc",
+		"openshift.default.svc.cluster.local",
+	}
+	version15 = semver.MustParse("1.5.0")
+	version35 = semver.MustParse("3.5.0")
 )
 
 // Helper contains methods and utilities to help with OpenShift startup
 type Helper struct {
-	hostHelper    *host.HostHelper
-	dockerHelper  *dockerhelper.Helper
-	execHelper    *dockerexec.ExecHelper
-	runHelper     *run.RunHelper
-	client        *docker.Client
-	publicHost    string
-	image         string
-	containerName string
-	routingSuffix string
-	serverIP      string
+	hostHelper        *host.HostHelper
+	dockerHelper      *dockerhelper.Helper
+	execHelper        *dockerexec.ExecHelper
+	runHelper         *run.RunHelper
+	client            dockerhelper.Interface
+	publicHost        string
+	image             string
+	containerName     string
+	routingSuffix     string
+	serverIP          string
+	version           *semver.Version
+	prereleaseVersion *semver.Version
 }
 
 // StartOptions represent the parameters sent to the start command
 type StartOptions struct {
 	ServerIP                 string
-	RouterIP                 string
+	AdditionalIPs            []string
 	RoutingSuffix            string
 	DNSPort                  int
 	UseSharedVolume          bool
-	SetPropagationMode       bool
 	Images                   string
 	HostVolumesDir           string
 	HostConfigDir            string
@@ -94,16 +131,16 @@ type StartOptions struct {
 	NoProxy                  []string
 	KubeconfigContents       string
 	DockerRoot               string
+	ServiceCatalog           bool
 }
 
 // NewHelper creates a new OpenShift helper
-func NewHelper(client *docker.Client, hostHelper *host.HostHelper, image, containerName, publicHostname, routingSuffix string) *Helper {
+func NewHelper(dockerHelper *dockerhelper.Helper, hostHelper *host.HostHelper, image, containerName, publicHostname, routingSuffix string) *Helper {
 	return &Helper{
-		client:        client,
-		dockerHelper:  dockerhelper.NewHelper(client, nil),
-		execHelper:    dockerexec.NewExecHelper(client, containerName),
+		dockerHelper:  dockerHelper,
+		execHelper:    dockerexec.NewExecHelper(dockerHelper.Client(), containerName),
 		hostHelper:    hostHelper,
-		runHelper:     run.NewRunHelper(client),
+		runHelper:     run.NewRunHelper(dockerHelper),
 		image:         image,
 		containerName: containerName,
 		publicHost:    publicHostname,
@@ -251,11 +288,7 @@ func (h *Helper) Start(opt *StartOptions, out io.Writer) (string, error) {
 		env = append(env, "OPENSHIFT_CONTAINERIZED=false")
 	} else {
 		binds = append(binds, "/:/rootfs:ro")
-		propagationMode := ""
-		if opt.SetPropagationMode {
-			propagationMode = ":rslave"
-		}
-		binds = append(binds, fmt.Sprintf("%[1]s:%[1]s%[2]s", opt.HostVolumesDir, propagationMode))
+		binds = append(binds, fmt.Sprintf("%[1]s:%[1]s:rslave", opt.HostVolumesDir))
 	}
 	env = append(env, opt.Environment...)
 	binds = append(binds, fmt.Sprintf("%[1]s:%[1]s", opt.DockerRoot))
@@ -273,47 +306,42 @@ func (h *Helper) Start(opt *StartOptions, out io.Writer) (string, error) {
 	}
 	skipCreateConfig := false
 	if opt.UseExistingConfig {
+		masterConfigExists := false
+		nodeConfigExists := false
 		var err error
 		configDir, err = h.copyConfig()
 		if err == nil {
 			_, err = os.Stat(filepath.Join(configDir, "master", "master-config.yaml"))
 			if err == nil {
-				skipCreateConfig = true
+				masterConfigExists = true
 			}
+			_, err = os.Stat(filepath.Join(configDir, "node-"+defaultNodeName, "node-config.yaml"))
+			if err == nil {
+				nodeConfigExists = true
+			}
+		}
+		if masterConfigExists && nodeConfigExists {
+			skipCreateConfig = true
 		}
 	}
 
 	// Create configuration if needed
-	var nodeHost string
 	if !skipCreateConfig {
 		fmt.Fprintf(out, "Creating initial OpenShift configuration\n")
+		publicHost := h.publicHost
+		if len(publicHost) == 0 {
+			publicHost = opt.ServerIP
+		}
 		createConfigCmd := []string{
 			"start",
 			fmt.Sprintf("--images=%s", opt.Images),
 			fmt.Sprintf("--volume-dir=%s", opt.HostVolumesDir),
 			fmt.Sprintf("--dns=0.0.0.0:%d", opt.DNSPort),
 			"--write-config=/var/lib/origin/openshift.local.config",
+			"--master=127.0.0.1",
+			fmt.Sprintf("--hostname=%s", defaultNodeName),
+			fmt.Sprintf("--public-master=https://%s:8443", publicHost),
 		}
-		if opt.PortForwarding {
-			internalIP, err := h.ServerIP()
-			if err != nil {
-				return "", err
-			}
-			nodeHost = internalIP
-			createConfigCmd = append(createConfigCmd, fmt.Sprintf("--master=%s", internalIP))
-			publicHost := h.publicHost
-			if len(publicHost) == 0 {
-				publicHost = opt.ServerIP
-			}
-			createConfigCmd = append(createConfigCmd, fmt.Sprintf("--public-master=https://%s:8443", publicHost))
-		} else {
-			nodeHost = opt.ServerIP
-			createConfigCmd = append(createConfigCmd, fmt.Sprintf("--master=%s", opt.ServerIP))
-			if len(h.publicHost) > 0 {
-				createConfigCmd = append(createConfigCmd, fmt.Sprintf("--public-master=https://%s:8443", h.publicHost))
-			}
-		}
-		createConfigCmd = append(createConfigCmd, fmt.Sprintf("--hostname=%s", nodeHost))
 		_, err := h.runHelper.New().Image(h.image).
 			Privileged().
 			DiscardContainer().
@@ -334,44 +362,18 @@ func (h *Helper) Start(opt *StartOptions, out io.Writer) (string, error) {
 			return "", errors.NewError("could not update OpenShift configuration").WithCause(err)
 		}
 	}
-	if nodeHost == "" {
-		if opt.PortForwarding {
-			var err error
-			nodeHost, err = h.ServerIP()
-			if err != nil {
-				return "", err
-			}
-		} else {
-			var err error
-			hostName, err := h.hostHelper.Hostname()
-			if err != nil {
-				return "", err
-			}
-			nodeHost, err = h.DetermineNodeHost(opt.HostConfigDir, opt.ServerIP, hostName)
-			if err != nil {
-				return "", err
-			}
-		}
-	}
-	masterConfig, nodeConfig, err := h.getOpenShiftConfigFiles(nodeHost)
-	if err != nil {
-		cleanupConfig()
-		return "", errors.NewError("could not get OpenShift configuration file paths").WithCause(err)
-	}
-
 	fmt.Fprintf(out, "Starting OpenShift using container '%s'\n", h.containerName)
 	startCmd := []string{
 		"start",
-		fmt.Sprintf("--master-config=%s", masterConfig),
-		fmt.Sprintf("--node-config=%s", nodeConfig),
+		fmt.Sprintf("--master-config=%s", serverMasterConfig),
+		fmt.Sprintf("--node-config=%s", serverNodeConfig),
 	}
 	if opt.LogLevel > 0 {
 		startCmd = append(startCmd, fmt.Sprintf("--loglevel=%d", opt.LogLevel))
 	}
 
 	if opt.PortForwarding {
-		err = h.startSocatTunnel()
-		if err != nil {
+		if err := h.startSocatTunnel(opt.ServerIP); err != nil {
 			return "", err
 		}
 	}
@@ -383,7 +385,7 @@ func (h *Helper) Start(opt *StartOptions, out io.Writer) (string, error) {
 		binds = append(binds, fmt.Sprintf("%[1]s:%[1]s", opt.HostPersistentVolumesDir))
 		env = append(env, fmt.Sprintf("OPENSHIFT_PV_DIR=%s", opt.HostPersistentVolumesDir))
 	}
-	_, err = h.runHelper.New().Image(h.image).
+	_, err := h.runHelper.New().Image(h.image).
 		Name(h.containerName).
 		Privileged().
 		HostNetwork().
@@ -420,7 +422,7 @@ func (h *Helper) Start(opt *StartOptions, out io.Writer) (string, error) {
 	for {
 		resp, ierr := client.Get(h.healthzReadyURL(opt.ServerIP))
 		if ierr != nil {
-			return "", errors.NewError("cannot access master readiness URL %s", h.healthzReadyURL(opt.ServerIP)).WithCause(err).WithDetails(h.OriginLog())
+			return "", errors.NewError("cannot access master readiness URL %s", h.healthzReadyURL(opt.ServerIP)).WithCause(ierr).WithDetails(h.OriginLog())
 		}
 		if resp.StatusCode == http.StatusOK {
 			break
@@ -441,6 +443,46 @@ func (h *Helper) Start(opt *StartOptions, out io.Writer) (string, error) {
 	return configDir, nil
 }
 
+// CheckNodes determines if there is more than one node that corresponds to the
+// current machine and removes the one that doesn't match the default node name
+func (h *Helper) CheckNodes(kclient kclientset.Interface) error {
+	nodes, err := kclient.Core().Nodes().List(metav1.ListOptions{})
+	if err != nil {
+		return errors.NewError("cannot retrieve nodes").WithCause(err)
+	}
+	if len(nodes.Items) > 1 {
+		glog.V(1).Infof("Found more than one node, will attempt to remove duplicate nodes")
+		nodesToRemove := []string{}
+
+		// First, find default node
+		defaultNodeMachineId := ""
+		for i := 0; i < len(nodes.Items); i++ {
+			if nodes.Items[i].Name == defaultNodeName {
+				defaultNodeMachineId = nodes.Items[i].Status.NodeInfo.MachineID
+				glog.V(5).Infof("machine id for default node is: %s", defaultNodeMachineId)
+				break
+			}
+		}
+
+		for i := 0; i < len(nodes.Items); i++ {
+			if nodes.Items[i].Name != defaultNodeName &&
+				nodes.Items[i].Status.NodeInfo.MachineID == defaultNodeMachineId {
+				glog.V(5).Infof("Found non-default node with duplicate machine id: %s", nodes.Items[i].Name)
+				nodesToRemove = append(nodesToRemove, nodes.Items[i].Name)
+			}
+		}
+
+		for i := 0; i < len(nodesToRemove); i++ {
+			glog.V(1).Infof("Deleting extra node %s", nodesToRemove[i])
+			err = kclient.Core().Nodes().Delete(nodesToRemove[i], nil)
+			if err != nil {
+				return errors.NewError("cannot delete duplicate node %s", nodesToRemove[i]).WithCause(err)
+			}
+		}
+	}
+	return nil
+}
+
 // StartNode starts the OpenShift node as a Docker container
 // and returns a directory in the local file system where
 // the OpenShift configuration has been copied
@@ -452,11 +494,7 @@ func (h *Helper) StartNode(opt *StartOptions, out io.Writer) error {
 		env = append(env, "OPENSHIFT_CONTAINERIZED=false")
 	} else {
 		binds = append(binds, "/:/rootfs:ro")
-		propagationMode := ""
-		if opt.SetPropagationMode {
-			propagationMode = ":rslave"
-		}
-		binds = append(binds, fmt.Sprintf("%[1]s:%[1]s%[2]s", opt.HostVolumesDir, propagationMode))
+		binds = append(binds, fmt.Sprintf("%[1]s:%[1]s:rslave", opt.HostVolumesDir))
 	}
 	env = append(env, opt.Environment...)
 
@@ -554,6 +592,17 @@ func (h *Helper) copyConfig() (string, error) {
 	return tempDir, nil
 }
 
+func (h *Helper) GetNodeConfigFromLocalDir(configDir string) (*configapi.NodeConfig, string, error) {
+	configPath := filepath.Join(configDir, fmt.Sprintf("node-%s", defaultNodeName), "node-config.yaml")
+	glog.V(1).Infof("Reading node config from %s", configPath)
+	cfg, err := configapilatest.ReadNodeConfig(configPath)
+	if err != nil {
+		glog.V(1).Infof("Could not read node config: %v", err)
+		return nil, "", err
+	}
+	return cfg, configPath, nil
+}
+
 func (h *Helper) GetConfigFromLocalDir(configDir string) (*configapi.MasterConfig, string, error) {
 	configPath := filepath.Join(configDir, "master", "master-config.yaml")
 	glog.V(1).Infof("Reading master config from %s", configPath)
@@ -565,7 +614,7 @@ func (h *Helper) GetConfigFromLocalDir(configDir string) (*configapi.MasterConfi
 	return cfg, configPath, nil
 }
 
-func GetConfigFromContainer(client *docker.Client) (*configapi.MasterConfig, error) {
+func GetConfigFromContainer(client dockerhelper.Interface) (*configapi.MasterConfig, error) {
 	r, err := dockerhelper.StreamFileFromContainer(client, OpenShiftContainer, serverMasterConfig)
 	if err != nil {
 		return nil, err
@@ -584,6 +633,64 @@ func GetConfigFromContainer(client *docker.Client) (*configapi.MasterConfig, err
 	return config, nil
 }
 
+func (h *Helper) ServerVersion() (semver.Version, error) {
+	if h.version != nil {
+		return *h.version, nil
+	}
+	version, err := h.ServerPrereleaseVersion()
+	if err == nil {
+		// ignore pre-release portion
+		version.Pre = []semver.PRVersion{}
+		h.version = &version
+	}
+	return version, err
+}
+
+func (h *Helper) ServerPrereleaseVersion() (semver.Version, error) {
+	if h.prereleaseVersion != nil {
+		return *h.prereleaseVersion, nil
+	}
+
+	versionText, _, _, err := h.runHelper.New().Image(h.image).
+		Command("version").
+		DiscardContainer().
+		Output()
+	if err != nil {
+		return semver.Version{}, err
+	}
+	lines := strings.Split(versionText, "\n")
+	versionStr := ""
+	for _, line := range lines {
+		if strings.HasPrefix(line, "openshift") {
+			parts := strings.SplitN(line, " ", 2)
+			versionStr = strings.TrimLeft(parts[1], "v")
+			break
+		}
+	}
+
+	if len(versionStr) == 0 {
+		return semver.Version{}, fmt.Errorf("did not find version in command output")
+	}
+	return parseOpenshiftVersion(versionStr)
+}
+
+func parseOpenshiftVersion(versionStr string) (semver.Version, error) {
+	// The OCP version may have > 4 parts to the version string,
+	// e.g. 3.5.1.1-prerelease, whereas Origin will be 3.5.1-prerelease,
+	// drop the 4th digit for OCP.
+	re := regexp.MustCompile("([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)")
+	versionStr = re.ReplaceAllString(versionStr, "${1}.${2}.${3}${5}")
+
+	return semver.Parse(versionStr)
+}
+
+func useDNSIP(version semver.Version) bool {
+	if version.Major == 1 {
+		return version.GTE(version15)
+	}
+	return version.GTE(version35)
+}
+
 func (h *Helper) updateConfig(configDir string, opt *StartOptions) error {
 	cfg, configPath, err := h.GetConfigFromLocalDir(configDir)
 	if err != nil {
@@ -593,7 +700,7 @@ func (h *Helper) updateConfig(configDir string, opt *StartOptions) error {
 	if len(opt.RoutingSuffix) > 0 {
 		cfg.RoutingConfig.Subdomain = opt.RoutingSuffix
 	} else {
-		cfg.RoutingConfig.Subdomain = fmt.Sprintf("%s.xip.io", opt.RouterIP)
+		cfg.RoutingConfig.Subdomain = fmt.Sprintf("%s.nip.io", opt.ServerIP)
 	}
 
 	if len(opt.MetricsHost) > 0 && cfg.AssetConfig != nil {
@@ -641,6 +748,110 @@ func (h *Helper) updateConfig(configDir string, opt *StartOptions) error {
 		cfg.AdmissionConfig.PluginConfig[defaultsapi.BuildDefaultsPlugin] = buildDefaultsConfig
 	}
 
+	if opt.ServiceCatalog {
+
+		// podpresets is a v1alpha1 api so we need to enable those apis explicitly.
+		cfg.KubernetesMasterConfig.APIServerArguments["runtime-config"] = append(cfg.KubernetesMasterConfig.APIServerArguments["runtime-config"], "apis/settings.k8s.io/v1alpha1=true")
+
+		if cfg.AdmissionConfig.PluginConfig == nil {
+			cfg.AdmissionConfig.PluginConfig = map[string]configapi.AdmissionPluginConfig{}
+		}
+
+		cfg.AdmissionConfig.PluginConfig["PodPreset"] = configapi.AdmissionPluginConfig{
+			Configuration: &configapi.DefaultAdmissionConfig{Disable: false},
+		}
+
+		cfg.TemplateServiceBrokerConfig = &configapi.TemplateServiceBrokerConfig{
+			TemplateNamespaces: []string{OpenshiftNamespace},
+		}
+		if cfg.AssetConfig == nil {
+			cfg.AssetConfig = &configapi.AssetConfig{}
+		}
+		cfg.AssetConfig.ExtensionScripts = append(cfg.AssetConfig.ExtensionScripts, serviceCatalogExtensionPath)
+
+		extension := `
+window.OPENSHIFT_CONSTANTS.ENABLE_TECH_PREVIEW_FEATURE = {
+  service_catalog_landing_page: true,
+  template_service_broker: true,
+  pod_presets: true
+};
+`
+		extensionPath := filepath.Join(configDir, "master", "servicecatalog-extension.js")
+		err = ioutil.WriteFile(extensionPath, []byte(extension), 0644)
+		if err != nil {
+			return err
+		}
+		err = h.hostHelper.UploadFileToContainer(extensionPath, serviceCatalogExtensionPath)
+		if err != nil {
+			return err
+		}
+
+		// setup the api aggegrator needed by the service catalog
+		cfg.AggregatorConfig = configapi.AggregatorConfig{
+			ProxyClientInfo: configapi.CertInfo{
+				CertFile: aggregatorCert,
+				KeyFile:  aggregatorKey,
+			},
+		}
+		cfg.AuthConfig.RequestHeader = &configapi.RequestHeaderAuthenticationOptions{
+			ClientCA:            aggregatorCACert,
+			ClientCommonNames:   []string{"aggregator-front-proxy"},
+			UsernameHeaders:     []string{"X-Remote-User"},
+			GroupHeaders:        []string{"X-Remote-Group"},
+			ExtraHeaderPrefixes: []string{"X-Remote-Extra-"},
+		}
+
+		cacertPath := filepath.Join(configDir, aggregatorCACert)
+		cakeyPath := filepath.Join(configDir, aggregatorCAKey)
+		caserialPath := filepath.Join(configDir, aggregatorCASerial)
+		certPath := filepath.Join(configDir, aggregatorCert)
+		keyPath := filepath.Join(configDir, aggregatorKey)
+
+		cmdOutput := &bytes.Buffer{}
+		createSignerCertOptions := &admin.CreateSignerCertOptions{
+			CertFile:   cacertPath,
+			KeyFile:    cakeyPath,
+			SerialFile: caserialPath,
+			Output:     cmdOutput,
+		}
+		_, err = createSignerCertOptions.CreateSignerCert()
+		if err != nil {
+			return errors.NewError("cannot create signer cert").WithCause(err).WithDetails(cmdOutput.String())
+		}
+
+		cmdOutput = &bytes.Buffer{}
+		signerCertOptions := admin.NewDefaultSignerCertOptions()
+		signerCertOptions.CertFile = cacertPath
+		signerCertOptions.KeyFile = cakeyPath
+		signerCertOptions.SerialFile = caserialPath
+
+		createClientOptions := &admin.CreateClientOptions{
+			SignerCertOptions: signerCertOptions,
+			ClientDir:         configDir,
+			ExpireDays:        crypto.DefaultCertificateLifetimeInDays,
+			User:              "aggregator-front-proxy",
+			Output:            cmdOutput,
+		}
+		err = createClientOptions.CreateClientFolder()
+		if err != nil {
+			return errors.NewError("cannot create client config").WithCause(err).WithDetails(cmdOutput.String())
+		}
+
+		err = h.hostHelper.UploadFileToContainer(cacertPath, aggregatorCACertPath)
+		if err != nil {
+			return err
+		}
+		err = h.hostHelper.UploadFileToContainer(certPath, aggregatorCertPath)
+		if err != nil {
+			return err
+		}
+		err = h.hostHelper.UploadFileToContainer(keyPath, aggregatorKeyPath)
+		if err != nil {
+			return err
+		}
+
+	}
+
 	cfg.JenkinsPipelineConfig.TemplateName = "jenkins-persistent"
 
 	cfgBytes, err := configapilatest.WriteYAML(cfg)
@@ -651,13 +862,47 @@ func (h *Helper) updateConfig(configDir string, opt *StartOptions) error {
 	if err != nil {
 		return err
 	}
-	return h.hostHelper.UploadFileToContainer(configPath, serverMasterConfig)
-}
+	err = h.hostHelper.UploadFileToContainer(configPath, serverMasterConfig)
+	if err != nil {
+		return err
+	}
+	nodeCfg, nodeConfigPath, err := h.GetNodeConfigFromLocalDir(configDir)
+	if err != nil {
+		return err
+	}
+	version, err := h.ServerVersion()
+	if err != nil {
+		return err
+	}
+	if useDNSIP(version) {
+		nodeCfg.DNSIP = "172.30.0.1"
+	} else {
+		nodeCfg.DNSIP = ""
+	}
+	nodeCfg.DNSBindAddress = ""
 
-func (h *Helper) getOpenShiftConfigFiles(hostname string) (string, string, error) {
-	return serverMasterConfig,
-		fmt.Sprintf("/var/lib/origin/openshift.local.config/node-%s/node-config.yaml", hostname),
-		nil
+	if h.supportsCgroupDriver() {
+		// Set the cgroup driver from the current docker
+		cgroupDriver, err := h.dockerHelper.CgroupDriver()
+		if err != nil {
+			return err
+		}
+		glog.V(5).Infof("cgroup driver from Docker: %s", cgroupDriver)
+		if nodeCfg.KubeletArguments == nil {
+			nodeCfg.KubeletArguments = configapi.ExtendedArguments{}
+		}
+		nodeCfg.KubeletArguments["cgroup-driver"] = []string{cgroupDriver}
+	}
+
+	cfgBytes, err = configapilatest.WriteYAML(nodeCfg)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(nodeConfigPath, cfgBytes, 0644)
+	if err != nil {
+		return err
+	}
+	return h.hostHelper.UploadFileToContainer(nodeConfigPath, serverNodeConfig)
 }
 
 func checkPortsInUse(data string, ports []int) error {
@@ -702,4 +947,26 @@ func getUsedPorts(data string) map[int]struct{} {
 	}
 	glog.V(2).Infof("Used ports in container: %#v", ports)
 	return ports
+}
+
+func (h *Helper) supportsCgroupDriver() bool {
+	script := `#!/bin/bash
+
+# Exit with an error
+set -e
+
+# Ensure we have a link to the openshift binary named kubelet
+if [[ ! -f /usr/bin/kubelet ]]; then
+   ln -s /usr/bin/openshift /usr/bin/kubelet
+fi
+
+kubelet --help | grep -- "--cgroup-driver"
+`
+	rc, err := h.runHelper.New().Image(h.image).
+		DiscardContainer().
+		Entrypoint("/bin/bash").
+		Command("-c", script).
+		Run()
+
+	return rc == 0 && err == nil
 }

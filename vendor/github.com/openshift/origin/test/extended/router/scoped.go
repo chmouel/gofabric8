@@ -3,6 +3,7 @@ package images
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -10,8 +11,8 @@ import (
 	g "github.com/onsi/ginkgo"
 	o "github.com/onsi/gomega"
 
-	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/util/wait"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 
 	exutil "github.com/openshift/origin/test/extended/util"
@@ -19,7 +20,7 @@ import (
 
 const changeTimeoutSeconds = 3 * 60
 
-var _ = g.Describe("[networking][router] openshift routers", func() {
+var _ = g.Describe("[Conformance][networking][router] openshift routers", func() {
 	defer g.GinkgoRecover()
 	var (
 		configPath = exutil.FixturePath("testdata", "scoped-router.yaml")
@@ -27,10 +28,13 @@ var _ = g.Describe("[networking][router] openshift routers", func() {
 	)
 
 	g.BeforeEach(func() {
-		// defer oc.Run("delete").Args("-f", configPath).Execute()
+		imagePrefix := os.Getenv("OS_IMAGE_PREFIX")
+		if len(imagePrefix) == 0 {
+			imagePrefix = "openshift/origin"
+		}
 		err := oc.AsAdmin().Run("adm").Args("policy", "add-cluster-role-to-user", "system:router", oc.Username()).Execute()
 		o.Expect(err).NotTo(o.HaveOccurred())
-		err = oc.Run("create").Args("-f", configPath).Execute()
+		err = oc.Run("new-app").Args("-f", configPath, "-p", "IMAGE="+imagePrefix+"-haproxy-router").Execute()
 		o.Expect(err).NotTo(o.HaveOccurred())
 	})
 
@@ -44,14 +48,14 @@ var _ = g.Describe("[networking][router] openshift routers", func() {
 			}()
 			oc.SetOutputDir(exutil.TestContext.OutputDir)
 			ns := oc.KubeFramework().Namespace.Name
-			execPodName := exutil.CreateExecPodOrFail(oc.AdminKubeClient().Core(), ns, "execpod")
-			defer func() { oc.AdminKubeClient().Core().Pods(ns).Delete(execPodName, kapi.NewDeleteOptions(1)) }()
+			execPodName := exutil.CreateExecPodOrFail(oc.AdminKubeClient().CoreV1(), ns, "execpod")
+			defer func() { oc.AdminKubeClient().CoreV1().Pods(ns).Delete(execPodName, metav1.NewDeleteOptions(1)) }()
 
 			g.By(fmt.Sprintf("creating a scoped router from a config file %q", configPath))
 
 			var routerIP string
 			err := wait.Poll(time.Second, changeTimeoutSeconds*time.Second, func() (bool, error) {
-				pod, err := oc.KubeFramework().ClientSet.Core().Pods(oc.KubeFramework().Namespace.Name).Get("scoped-router")
+				pod, err := oc.KubeFramework().ClientSet.CoreV1().Pods(oc.KubeFramework().Namespace.Name).Get("scoped-router", metav1.GetOptions{})
 				if err != nil {
 					return false, err
 				}
@@ -94,14 +98,14 @@ var _ = g.Describe("[networking][router] openshift routers", func() {
 			}()
 			oc.SetOutputDir(exutil.TestContext.OutputDir)
 			ns := oc.KubeFramework().Namespace.Name
-			execPodName := exutil.CreateExecPodOrFail(oc.AdminKubeClient().Core(), ns, "execpod")
-			defer func() { oc.AdminKubeClient().Core().Pods(ns).Delete(execPodName, kapi.NewDeleteOptions(1)) }()
+			execPodName := exutil.CreateExecPodOrFail(oc.AdminKubeClient().CoreV1(), ns, "execpod")
+			defer func() { oc.AdminKubeClient().CoreV1().Pods(ns).Delete(execPodName, metav1.NewDeleteOptions(1)) }()
 
 			g.By(fmt.Sprintf("creating a scoped router from a config file %q", configPath))
 
 			var routerIP string
 			err := wait.Poll(time.Second, changeTimeoutSeconds*time.Second, func() (bool, error) {
-				pod, err := oc.KubeFramework().ClientSet.Core().Pods(ns).Get("router-override")
+				pod, err := oc.KubeFramework().ClientSet.CoreV1().Pods(ns).Get("router-override", metav1.GetOptions{})
 				if err != nil {
 					return false, err
 				}
@@ -146,7 +150,7 @@ func waitForRouterOKResponseExec(ns, execPodName, url, host string, timeoutSecon
 	cmd := fmt.Sprintf(`
 		set -e
 		for i in $(seq 1 %d); do
-			code=$( curl -s -o /dev/null -w '%%{http_code}\n' --header 'Host: %s' %q ) || rc=$?
+			code=$( curl -k -s -o /dev/null -w '%%{http_code}\n' --header 'Host: %s' %q ) || rc=$?
 			if [[ "${rc:-0}" -eq 0 ]]; then
 				echo $code
 				if [[ $code -eq 200 ]]; then

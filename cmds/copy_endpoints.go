@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/kubernetes/pkg/api"
 
+	apim "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
@@ -83,7 +84,7 @@ func NewCmdCopyEndpoints(f cmdutil.Factory) *cobra.Command {
 func copyEndpoints(c *clientset.Clientset, fromNs string, toNs string, names []string) error {
 	var answer error
 	for _, name := range names {
-		item, err := c.Endpoints(fromNs).Get(name)
+		item, err := c.Endpoints(fromNs).Get(name, apim.GetOptions{})
 		if err != nil {
 			util.Warnf("No endpoint called %s found in namespace %s", name, fromNs)
 			answer = err
@@ -91,11 +92,11 @@ func copyEndpoints(c *clientset.Clientset, fromNs string, toNs string, names []s
 		name := item.Name
 		objectMeta := item.ObjectMeta
 
-		current, err := c.Endpoints(toNs).Get(name)
+		current, err := c.Endpoints(toNs).Get(name, apim.GetOptions{})
 		if current == nil || err != nil {
 			// lets create the endpoint
 			newEndpoints := &api.Endpoints{
-				ObjectMeta: api.ObjectMeta{
+				ObjectMeta: apim.ObjectMeta{
 					Name:        name,
 					Labels:      objectMeta.Labels,
 					Annotations: objectMeta.Annotations,

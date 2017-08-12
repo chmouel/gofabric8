@@ -31,16 +31,16 @@ os::cmd::expect_success_and_text 'oc policy can-i create pv' 'yes'
 os::cmd::expect_success_and_text 'oc policy can-i create storageclass' 'yes'
 
 # Test failure to change policy on users for storage-admin
-os::cmd::expect_failure_and_text 'oc policy add-role-to-user admin storage-adm' 'cannot get policybindings'
-os::cmd::expect_failure_and_text 'oc policy remove-user screeley' 'cannot list policybindings'
+os::cmd::expect_failure_and_text 'oc policy add-role-to-user admin storage-adm' 'cannot list rolebindings'
+os::cmd::expect_failure_and_text 'oc policy remove-user screeley' 'cannot list rolebindings'
 os::cmd::expect_success 'oc logout'
 
 # Test that scoped storage-admin now an admin in project foo
 os::cmd::expect_success 'oc login -u storage-adm2 -p pw'
 os::cmd::expect_success_and_text 'oc whoami' "storage-adm2"
-os::cmd::expect_success 'oc new-project foo'
+os::cmd::expect_success 'oc new-project policy-can-i'
 os::cmd::expect_success_and_text 'oc policy can-i create pod --all-namespaces' 'no'
 os::cmd::expect_success_and_text 'oc policy can-i create pod' 'yes'
 os::cmd::expect_success_and_text 'oc policy can-i create pvc' 'yes'
 os::cmd::expect_success_and_text 'oc policy can-i create endpoints' 'yes'
-os::cmd::expect_success 'oc delete project foo'
+os::cmd::expect_success 'oc delete project policy-can-i'

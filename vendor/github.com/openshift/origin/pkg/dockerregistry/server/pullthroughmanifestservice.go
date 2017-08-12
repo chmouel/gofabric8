@@ -5,7 +5,7 @@ import (
 	"github.com/docker/distribution/context"
 	"github.com/docker/distribution/digest"
 
-	imageapi "github.com/openshift/origin/pkg/image/api"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 )
 
 // pullthroughManifestService wraps a distribution.ManifestService
@@ -102,6 +102,6 @@ func (m *pullthroughManifestService) getRemoteRepositoryClient(ctx context.Conte
 func (m *pullthroughManifestService) Put(ctx context.Context, manifest distribution.Manifest, options ...distribution.ManifestServiceOption) (digest.Digest, error) {
 	context.GetLogger(ctx).Debugf("(*pullthroughManifestService).Put: enabling remote blob access check")
 	// manifest dependencies (layers and config) may not be stored locally, we need to be able to stat them in remote repositories
-	ctx = WithRemoteBlobAccessCheckEnabled(ctx, true)
+	ctx = withRemoteBlobAccessCheckEnabled(ctx, true)
 	return m.ManifestService.Put(ctx, manifest, options...)
 }

@@ -3,24 +3,27 @@ package authorizer
 import (
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apiserver/pkg/authentication/user"
+	kauthorizer "k8s.io/apiserver/pkg/authorization/authorizer"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/auth/user"
-	"k8s.io/kubernetes/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/util/uuid"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
 )
 
 func TestClusterAdminUseGroup(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "root", Groups: []string{bootstrappolicy.ClusterAdminGroup}}),
-		attributes: &DefaultAuthorizationAttributes{
-			APIGroup: "extensions",
-			Verb:     "create",
-			Resource: "jobs",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "root", Groups: []string{bootstrappolicy.ClusterAdminGroup}},
+			Namespace:       "mallet",
+			APIGroup:        "extensions",
+			Verb:            "create",
+			Resource:        "jobs",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -33,11 +36,13 @@ func TestClusterAdminUseGroup(t *testing.T) {
 
 func TestClusterReaderUseGroup(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "root", Groups: []string{bootstrappolicy.ClusterReaderGroup}}),
-		attributes: &DefaultAuthorizationAttributes{
-			APIGroup: "extensions",
-			Verb:     "list",
-			Resource: "jobs",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "root", Groups: []string{bootstrappolicy.ClusterReaderGroup}},
+			Namespace:       "mallet",
+			APIGroup:        "extensions",
+			Verb:            "list",
+			Resource:        "jobs",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -50,13 +55,15 @@ func TestClusterReaderUseGroup(t *testing.T) {
 
 func TestInvalidRole(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Brad"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "buildConfigs",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Brad"},
+			Namespace:       "mallet",
+			Verb:            "get",
+			Resource:        "buildConfigs",
 		},
 		expectedAllowed: false,
-		expectedError:   "unable to interpret:",
+		expectedReason:  `User "Brad" cannot get buildConfigs in project "mallet"`,
 	}
 	test.clusterPolicies = newDefaultClusterPolicies()
 	test.policies = newInvalidExtensionPolicies()
@@ -67,10 +74,12 @@ func TestInvalidRole(t *testing.T) {
 }
 func TestInvalidRoleButRuleNotUsed(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Brad"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "buildConfigs",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Brad"},
+			Namespace:       "mallet",
+			Verb:            "update",
+			Resource:        "buildConfigs",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -84,10 +93,12 @@ func TestInvalidRoleButRuleNotUsed(t *testing.T) {
 }
 func TestViewerGetAllowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Victor"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Victor"},
+			Namespace:       "mallet",
+			Verb:            "get",
+			Resource:        "pods",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -103,10 +114,12 @@ func TestViewerGetAllowedKindInMallet(t *testing.T) {
 }
 func TestViewerGetAllowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Victor"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Victor"},
+			Namespace:       "adze",
+			Verb:            "get",
+			Resource:        "pods",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Victor" cannot get pods in project "adze"`,
@@ -123,10 +136,12 @@ func TestViewerGetAllowedKindInAdze(t *testing.T) {
 
 func TestViewerGetDisallowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Victor"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "policies",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Victor"},
+			Namespace:       "mallet",
+			Verb:            "get",
+			Resource:        "policies",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Victor" cannot get policies in project "mallet"`,
@@ -142,10 +157,12 @@ func TestViewerGetDisallowedKindInMallet(t *testing.T) {
 }
 func TestViewerGetDisallowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Victor"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "policies",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Victor"},
+			Namespace:       "adze",
+			Verb:            "get",
+			Resource:        "policies",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Victor" cannot get policies in project "adze"`,
@@ -162,10 +179,12 @@ func TestViewerGetDisallowedKindInAdze(t *testing.T) {
 
 func TestViewerCreateAllowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Victor"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "create",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Victor"},
+			Namespace:       "mallet",
+			Verb:            "create",
+			Resource:        "pods",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Victor" cannot create pods in project "mallet"`,
@@ -181,10 +200,12 @@ func TestViewerCreateAllowedKindInMallet(t *testing.T) {
 }
 func TestViewerCreateAllowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Victor"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "create",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Victor"},
+			Namespace:       "adze",
+			Verb:            "create",
+			Resource:        "pods",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Victor" cannot create pods in project "adze"`,
@@ -201,10 +222,12 @@ func TestViewerCreateAllowedKindInAdze(t *testing.T) {
 
 func TestEditorUpdateAllowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Edgar"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Edgar"},
+			Namespace:       "mallet",
+			Verb:            "update",
+			Resource:        "pods",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -220,10 +243,12 @@ func TestEditorUpdateAllowedKindInMallet(t *testing.T) {
 }
 func TestEditorUpdateAllowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Edgar"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Edgar"},
+			Namespace:       "adze",
+			Verb:            "update",
+			Resource:        "pods",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Edgar" cannot update pods in project "adze"`,
@@ -240,10 +265,12 @@ func TestEditorUpdateAllowedKindInAdze(t *testing.T) {
 
 func TestEditorUpdateDisallowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Edgar"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "roleBindings",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Edgar"},
+			Namespace:       "mallet",
+			Verb:            "update",
+			Resource:        "roleBindings",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Edgar" cannot update roleBindings in project "mallet"`,
@@ -259,10 +286,12 @@ func TestEditorUpdateDisallowedKindInMallet(t *testing.T) {
 }
 func TestEditorUpdateDisallowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Edgar"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "roleBindings",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Edgar"},
+			Namespace:       "adze",
+			Verb:            "update",
+			Resource:        "roleBindings",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Edgar" cannot update roleBindings in project "adze"`,
@@ -279,10 +308,12 @@ func TestEditorUpdateDisallowedKindInAdze(t *testing.T) {
 
 func TestEditorGetAllowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Edgar"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Edgar"},
+			Namespace:       "mallet",
+			Verb:            "get",
+			Resource:        "pods",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -298,10 +329,12 @@ func TestEditorGetAllowedKindInMallet(t *testing.T) {
 }
 func TestEditorGetAllowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Edgar"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "pods",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Edgar"},
+			Namespace:       "adze",
+			Verb:            "get",
+			Resource:        "pods",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Edgar" cannot get pods in project "adze"`,
@@ -318,10 +351,12 @@ func TestEditorGetAllowedKindInAdze(t *testing.T) {
 
 func TestAdminUpdateAllowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Matthew"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "roleBindings",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Matthew"},
+			Namespace:       "mallet",
+			Verb:            "update",
+			Resource:        "roleBindings",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -337,10 +372,12 @@ func TestAdminUpdateAllowedKindInMallet(t *testing.T) {
 }
 func TestAdminUpdateAllowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Matthew"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "roleBindings",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Matthew"},
+			Namespace:       "adze",
+			Verb:            "update",
+			Resource:        "roleBindings",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Matthew" cannot update roleBindings in project "adze"`,
@@ -357,10 +394,12 @@ func TestAdminUpdateAllowedKindInAdze(t *testing.T) {
 
 func TestAdminUpdateStatusInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Matthew"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "pods/status",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Matthew"},
+			Namespace:       "mallet",
+			Verb:            "update",
+			Resource:        "pods/status",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Matthew" cannot update pods/status in project "mallet"`,
@@ -376,10 +415,13 @@ func TestAdminUpdateStatusInMallet(t *testing.T) {
 }
 func TestAdminGetStatusInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Matthew"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "pods/status",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Matthew"},
+			Namespace:       "mallet",
+			Verb:            "get",
+			Resource:        "pods",
+			Subresource:     "status",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -396,10 +438,12 @@ func TestAdminGetStatusInMallet(t *testing.T) {
 
 func TestAdminUpdateDisallowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Matthew"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "policies",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Matthew"},
+			Namespace:       "mallet",
+			Verb:            "update",
+			Resource:        "policies",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Matthew" cannot update policies in project "mallet"`,
@@ -415,10 +459,12 @@ func TestAdminUpdateDisallowedKindInMallet(t *testing.T) {
 }
 func TestAdminUpdateDisallowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Matthew"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "update",
-			Resource: "roles",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Matthew"},
+			Namespace:       "adze",
+			Verb:            "update",
+			Resource:        "roles",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Matthew" cannot update roles in project "adze"`,
@@ -435,10 +481,12 @@ func TestAdminUpdateDisallowedKindInAdze(t *testing.T) {
 
 func TestAdminGetAllowedKindInMallet(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "mallet"), &user.DefaultInfo{Name: "Matthew"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "policies",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Matthew"},
+			Namespace:       "mallet",
+			Verb:            "get",
+			Resource:        "policies",
 		},
 		expectedAllowed: true,
 		expectedReason:  "allowed by rule in mallet",
@@ -454,10 +502,12 @@ func TestAdminGetAllowedKindInMallet(t *testing.T) {
 }
 func TestAdminGetAllowedKindInAdze(t *testing.T) {
 	test := &authorizeTest{
-		context: kapi.WithUser(kapi.WithNamespace(kapi.NewContext(), "adze"), &user.DefaultInfo{Name: "Matthew"}),
-		attributes: &DefaultAuthorizationAttributes{
-			Verb:     "get",
-			Resource: "policies",
+		attributes: kauthorizer.AttributesRecord{
+			ResourceRequest: true,
+			User:            &user.DefaultInfo{Name: "Matthew"},
+			Namespace:       "adze",
+			Verb:            "get",
+			Resource:        "policies",
 		},
 		expectedAllowed: false,
 		expectedReason:  `User "Matthew" cannot get policies in project "adze"`,
@@ -475,7 +525,7 @@ func TestAdminGetAllowedKindInAdze(t *testing.T) {
 func newMalletPolicies() []authorizationapi.Policy {
 	return []authorizationapi.Policy{
 		{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      authorizationapi.PolicyName,
 				Namespace: "mallet",
 			},
@@ -485,13 +535,13 @@ func newMalletPolicies() []authorizationapi.Policy {
 func newMalletBindings() []authorizationapi.PolicyBinding {
 	return []authorizationapi.PolicyBinding{
 		{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      authorizationapi.ClusterPolicyBindingName,
 				Namespace: "mallet",
 			},
 			RoleBindings: map[string]*authorizationapi.RoleBinding{
 				"projectAdmins": {
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name:      "projectAdmins",
 						Namespace: "mallet",
 					},
@@ -501,7 +551,7 @@ func newMalletBindings() []authorizationapi.PolicyBinding {
 					Subjects: []kapi.ObjectReference{{Kind: authorizationapi.UserKind, Name: "Matthew"}},
 				},
 				"viewers": {
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name:      "viewers",
 						Namespace: "mallet",
 					},
@@ -511,7 +561,7 @@ func newMalletBindings() []authorizationapi.PolicyBinding {
 					Subjects: []kapi.ObjectReference{{Kind: authorizationapi.UserKind, Name: "Victor"}},
 				},
 				"editors": {
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name:      "editors",
 						Namespace: "mallet",
 					},
@@ -527,13 +577,13 @@ func newMalletBindings() []authorizationapi.PolicyBinding {
 func newInvalidExtensionPolicies() []authorizationapi.Policy {
 	return []authorizationapi.Policy{
 		{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      authorizationapi.PolicyName,
 				Namespace: "mallet",
 			},
 			Roles: map[string]*authorizationapi.Role{
 				"badExtension": {
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name:      "failure",
 						Namespace: "mallet",
 					},
@@ -557,13 +607,13 @@ func newInvalidExtensionPolicies() []authorizationapi.Policy {
 func newInvalidExtensionBindings() []authorizationapi.PolicyBinding {
 	return []authorizationapi.PolicyBinding{
 		{
-			ObjectMeta: kapi.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      "mallet",
 				Namespace: "mallet",
 			},
 			RoleBindings: map[string]*authorizationapi.RoleBinding{
 				"borked": {
-					ObjectMeta: kapi.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name:      "borked",
 						Namespace: "mallet",
 					},
@@ -580,12 +630,12 @@ func newInvalidExtensionBindings() []authorizationapi.PolicyBinding {
 
 func GetBootstrapPolicy() *authorizationapi.ClusterPolicy {
 	policy := &authorizationapi.ClusterPolicy{
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:              authorizationapi.PolicyName,
-			CreationTimestamp: unversioned.Now(),
+			CreationTimestamp: metav1.Now(),
 			UID:               uuid.NewUUID(),
 		},
-		LastModified: unversioned.Now(),
+		LastModified: metav1.Now(),
 		Roles:        make(map[string]*authorizationapi.ClusterRole),
 	}
 
@@ -599,12 +649,12 @@ func GetBootstrapPolicy() *authorizationapi.ClusterPolicy {
 
 func GetBootstrapPolicyBinding() *authorizationapi.ClusterPolicyBinding {
 	policyBinding := &authorizationapi.ClusterPolicyBinding{
-		ObjectMeta: kapi.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:              ":Default",
-			CreationTimestamp: unversioned.Now(),
+			CreationTimestamp: metav1.Now(),
 			UID:               uuid.NewUUID(),
 		},
-		LastModified: unversioned.Now(),
+		LastModified: metav1.Now(),
 		RoleBindings: make(map[string]*authorizationapi.ClusterRoleBinding),
 	}
 

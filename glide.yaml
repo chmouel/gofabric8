@@ -1,25 +1,23 @@
 package: github.com/fabric8io/gofabric8
 import:
 - package: github.com/openshift/origin
-  version: v1.5.1
+  version: v3.6.0
 - package: k8s.io/kubernetes
   repo: git://github.com/openshift/kubernetes.git
   vcs: git
-  version: 43a9be421799afb8a9c02d3541212a6e623c9053
+  version: fff65cf41bdeeaff9964af98450b254f3f2da553
+- package: github.com/jonboulle/clockwork
+  version: v0.1.0
+- package: github.com/coreos/go-oidc
+  version: be73733bb8cc830d0205609b95d125215f8e9c70
 - package: github.com/docker/docker
   version: b9f10c951893f9a00865890a5232e85d770c1087
 - package: github.com/emicklei/go-restful
   version: v1.2
   subpackages:
   - swagger
-- package: k8s.io/client-go
-  version: 45673e060eb921b510677b1123737ad1158e49fa
 - package: github.com/prometheus/client_golang/prometheus
   version: e51041b3fa41cece0dca035740ba6411905be473
-- package: github.com/jteeuwen/go-bindata
-  version: ^3.0.7
-  subpackages:
-  - '...'
 - package: github.com/Sirupsen/logrus
   version: c078b1e43f58d563c74cebe63c85789e76ddb627
 - package: github.com/golang/glog

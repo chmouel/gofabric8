@@ -5,12 +5,12 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/watch"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/watch"
 
-	routeapi "github.com/openshift/origin/pkg/route/api"
-	"github.com/openshift/origin/pkg/route/api/validation"
+	routeapi "github.com/openshift/origin/pkg/route/apis/route"
+	"github.com/openshift/origin/pkg/route/apis/route/validation"
 	"github.com/openshift/origin/pkg/router"
 )
 
@@ -29,7 +29,7 @@ var LogRejections = logRecorder{}
 
 type logRecorder struct{}
 
-func (_ logRecorder) RecordRouteRejection(route *routeapi.Route, reason, message string) {
+func (logRecorder) RecordRouteRejection(route *routeapi.Route, reason, message string) {
 	glog.V(4).Infof("Rejected route %s: %s: %s", route.Name, reason, message)
 }
 
@@ -234,7 +234,7 @@ func (p *UniqueHost) HandleRoute(eventType watch.EventType, route *routeapi.Rout
 	return nil
 }
 
-// HandleAllowedNamespaces limits the scope of valid routes to only those that match
+// HandleNamespaces limits the scope of valid routes to only those that match
 // the provided namespace list.
 func (p *UniqueHost) HandleNamespaces(namespaces sets.String) error {
 	p.allowedNamespaces = namespaces

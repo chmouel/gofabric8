@@ -12,7 +12,7 @@ import (
 	disterrors "github.com/docker/distribution/registry/api/v2"
 
 	osclient "github.com/openshift/origin/pkg/client"
-	imageapi "github.com/openshift/origin/pkg/image/api"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 	"github.com/openshift/origin/pkg/image/importer"
 )
 
@@ -236,7 +236,10 @@ func (rbgs *remoteBlobGetterService) findCandidateRepository(
 
 	// search the remaining registries for this digest
 	for _, repo := range repositoryCandidates {
-		spec := search[repo]
+		spec, ok := search[repo]
+		if !ok {
+			continue
+		}
 		desc, err := rbgs.proxyStat(ctx, retriever, &spec, dgst)
 		if err != nil {
 			continue

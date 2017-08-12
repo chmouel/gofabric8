@@ -3,24 +3,17 @@
 # This scripts starts the OpenShift server with custom TLS certs, and verifies generated kubeconfig files can be used to talk to it.
 source "$(dirname "${BASH_SOURCE}")/../../hack/lib/init.sh"
 
-os::util::environment::setup_all_server_vars "test-extended-alternate-certs/"
+os::cleanup::tmpdir
+os::util::environment::setup_all_server_vars
 
-export EXTENDED_TEST_PATH="${OS_ROOT}/test/extended"
-
-function cleanup()
-{
-	out=$?
-	kill $OS_PID
-
-	os::test::junit::generate_oscmd_report
-
-	os::log::info "Exiting"
-	exit $out
+function cleanup() {
+	return_code=$?
+	os::test::junit::generate_report
+	os::cleanup::all
+	os::util::describe_return_code "${return_code}"
+	exit "${return_code}"
 }
-
-trap "exit" INT TERM
 trap "cleanup" EXIT
-
 
 os::log::info "Starting server as distinct processes"
 os::log::info "`openshift version`"

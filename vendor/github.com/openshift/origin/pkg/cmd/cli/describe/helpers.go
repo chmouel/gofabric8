@@ -10,14 +10,15 @@ import (
 
 	units "github.com/docker/go-units"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/labels"
-	"k8s.io/kubernetes/pkg/util/sets"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
-	buildapi "github.com/openshift/origin/pkg/build/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/client"
-	imageapi "github.com/openshift/origin/pkg/image/api"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 )
 
 const emptyString = "<none>"
@@ -112,7 +113,7 @@ func formatMapStringString(out *tabwriter.Writer, label string, items map[string
 	}
 }
 
-func formatAnnotations(out *tabwriter.Writer, m api.ObjectMeta, prefix string) {
+func formatAnnotations(out *tabwriter.Writer, m metav1.ObjectMeta, prefix string) {
 	values, annotations := extractAnnotations(m.Annotations, "description")
 	if len(values[0]) > 0 {
 		formatString(out, prefix+"Description", values[0])
@@ -139,9 +140,11 @@ func FormatRelativeTime(t time.Time) string {
 	return formatRelativeTime(t)
 }
 
-func formatMeta(out *tabwriter.Writer, m api.ObjectMeta) {
+func formatMeta(out *tabwriter.Writer, m metav1.ObjectMeta) {
 	formatString(out, "Name", m.Name)
-	formatString(out, "Namespace", m.Namespace)
+	if len(m.Namespace) > 0 {
+		formatString(out, "Namespace", m.Namespace)
+	}
 	if !m.CreationTimestamp.IsZero() {
 		formatTime(out, "Created", m.CreationTimestamp.Time)
 	}
@@ -168,6 +171,12 @@ func webHooksDescribe(triggers []buildapi.BuildTriggerPolicy, name, namespace st
 		switch trigger.Type {
 		case buildapi.GitHubWebHookBuildTriggerType:
 			webHookTrigger = trigger.GitHubWebHook.Secret
+
+		case buildapi.GitLabWebHookBuildTriggerType:
+			webHookTrigger = trigger.GitLabWebHook.Secret
+
+		case buildapi.BitbucketWebHookBuildTriggerType:
+			webHookTrigger = trigger.BitbucketWebHook.Secret
 
 		case buildapi.GenericWebHookBuildTriggerType:
 			webHookTrigger = trigger.GenericWebHook.Secret

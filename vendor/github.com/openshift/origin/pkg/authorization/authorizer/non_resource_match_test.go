@@ -3,9 +3,10 @@ package authorizer
 import (
 	"testing"
 
-	"k8s.io/kubernetes/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/sets"
+	kauthorizer "k8s.io/apiserver/pkg/authorization/authorizer"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 )
 
 type nonResourceMatchTest struct {
@@ -60,14 +61,14 @@ func TestNonResourceMatchNoSimilarity(t *testing.T) {
 }
 
 func (test *nonResourceMatchTest) run(t *testing.T) {
-	attributes := &DefaultAuthorizationAttributes{
-		NonResourceURL: true,
-		URL:            test.url,
+	attributes := kauthorizer.AttributesRecord{
+		ResourceRequest: false,
+		Path:            test.url,
 	}
 
 	rule := authorizationapi.PolicyRule{NonResourceURLs: sets.NewString(test.matcher)}
 
-	result := attributes.nonResourceMatches(rule)
+	result := nonResourceMatches(attributes, rule)
 
 	if result != test.expectedResult {
 		t.Errorf("Expected %v, got %v", test.expectedResult, result)

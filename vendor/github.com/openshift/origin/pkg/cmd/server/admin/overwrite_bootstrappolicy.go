@@ -8,37 +8,22 @@ import (
 
 	"github.com/spf13/cobra"
 
+	kapierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	kapi "k8s.io/kubernetes/pkg/api"
-	kapierrors "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/meta"
-	"k8s.io/kubernetes/pkg/apimachinery/registered"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/runtime"
-	kerrors "k8s.io/kubernetes/pkg/util/errors"
 
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
-	policyregistry "github.com/openshift/origin/pkg/authorization/registry/policy"
-	policyetcd "github.com/openshift/origin/pkg/authorization/registry/policy/etcd"
-	policybindingregistry "github.com/openshift/origin/pkg/authorization/registry/policybinding"
-	policybindingetcd "github.com/openshift/origin/pkg/authorization/registry/policybinding/etcd"
-	rolestorage "github.com/openshift/origin/pkg/authorization/registry/role/policybased"
-	rolebindingstorage "github.com/openshift/origin/pkg/authorization/registry/rolebinding/policybased"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
+	"github.com/openshift/origin/pkg/authorization/util"
 
-	clusterpolicyregistry "github.com/openshift/origin/pkg/authorization/registry/clusterpolicy"
-	clusterpolicyetcd "github.com/openshift/origin/pkg/authorization/registry/clusterpolicy/etcd"
-	clusterpolicybindingregistry "github.com/openshift/origin/pkg/authorization/registry/clusterpolicybinding"
-	clusterpolicybindingetcd "github.com/openshift/origin/pkg/authorization/registry/clusterpolicybinding/etcd"
-	clusterrolestorage "github.com/openshift/origin/pkg/authorization/registry/clusterrole/proxy"
-	clusterrolebindingstorage "github.com/openshift/origin/pkg/authorization/registry/clusterrolebinding/proxy"
-	"github.com/openshift/origin/pkg/authorization/rulevalidation"
-
-	"github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/cli/describe"
 	configapilatest "github.com/openshift/origin/pkg/cmd/server/api/latest"
 	originrest "github.com/openshift/origin/pkg/cmd/server/origin/rest"
-	cmdclientcmd "github.com/openshift/origin/pkg/cmd/util/clientcmd"
-	templateapi "github.com/openshift/origin/pkg/template/api"
+	templateapi "github.com/openshift/origin/pkg/template/apis/template"
 	"github.com/openshift/origin/pkg/util/restoptions"
 )
 
@@ -105,7 +90,10 @@ func (o OverwriteBootstrapPolicyOptions) OverwriteBootstrapPolicy() error {
 	}
 
 	// this brings in etcd server client libraries
-	optsGetter := originrest.StorageOptions(*masterConfig)
+	optsGetter, err := originrest.StorageOptions(*masterConfig)
+	if err != nil {
+		return err
+	}
 
 	return OverwriteBootstrapPolicy(optsGetter, o.File, o.CreateBootstrapPolicyCommand, o.Force, o.Out)
 }
@@ -115,7 +103,7 @@ func OverwriteBootstrapPolicy(optsGetter restoptions.Getter, policyFile, createB
 		fmt.Fprintf(out, "Performing a dry run of policy overwrite:\n\n")
 	}
 
-	mapper := cmdclientcmd.ShortcutExpander{RESTMapper: kcmdutil.ShortcutExpander{RESTMapper: registered.RESTMapper()}}
+	mapper := kapi.Registry.RESTMapper()
 	typer := kapi.Scheme
 	clientMapper := resource.ClientMapperFunc(func(mapping *meta.RESTMapping) (resource.RESTClient, error) {
 		return nil, nil
@@ -130,41 +118,10 @@ func OverwriteBootstrapPolicy(optsGetter restoptions.Getter, policyFile, createB
 		return r.Err()
 	}
 
-	policyStorage, err := policyetcd.NewStorage(optsGetter)
+	authStorage, err := util.GetAuthorizationStorage(optsGetter, nil)
 	if err != nil {
 		return err
 	}
-	policyRegistry := policyregistry.NewRegistry(policyStorage)
-
-	policyBindingStorage, err := policybindingetcd.NewStorage(optsGetter)
-	if err != nil {
-		return err
-	}
-	policyBindingRegistry := policybindingregistry.NewRegistry(policyBindingStorage)
-
-	clusterPolicyStorage, err := clusterpolicyetcd.NewStorage(optsGetter)
-	if err != nil {
-		return err
-	}
-	clusterPolicyRegistry := clusterpolicyregistry.NewRegistry(clusterPolicyStorage)
-
-	clusterPolicyBindingStorage, err := clusterpolicybindingetcd.NewStorage(optsGetter)
-	if err != nil {
-		return err
-	}
-	clusterPolicyBindingRegistry := clusterpolicybindingregistry.NewRegistry(clusterPolicyBindingStorage)
-
-	ruleResolver := rulevalidation.NewDefaultRuleResolver(
-		policyListerNamespacer{registry: policyRegistry},
-		policyBindingListerNamespacer{registry: policyBindingRegistry},
-		clusterpolicyregistry.ReadOnlyClusterPolicy{Registry: clusterPolicyRegistry},
-		clusterpolicybindingregistry.ReadOnlyClusterPolicyBinding{Registry: clusterPolicyBindingRegistry},
-	)
-
-	roleStorage := rolestorage.NewVirtualStorage(policyRegistry, ruleResolver, nil, authorizationapi.Resource("role"))
-	roleBindingStorage := rolebindingstorage.NewVirtualStorage(policyBindingRegistry, ruleResolver, nil, authorizationapi.Resource("rolebinding"))
-	clusterRoleStorage := clusterrolestorage.NewClusterRoleStorage(clusterPolicyRegistry, clusterPolicyBindingRegistry, nil)
-	clusterRoleBindingStorage := clusterrolebindingstorage.NewClusterRoleBindingStorage(clusterPolicyRegistry, clusterPolicyBindingRegistry, nil)
 
 	return r.Visit(func(info *resource.Info, err error) error {
 		if err != nil {
@@ -184,18 +141,18 @@ func OverwriteBootstrapPolicy(optsGetter restoptions.Getter, policyFile, createB
 		for _, item := range template.Objects {
 			switch t := item.(type) {
 			case *authorizationapi.Role:
-				ctx := kapi.WithNamespace(kapi.NewContext(), t.Namespace)
+				ctx := apirequest.WithNamespace(apirequest.NewContext(), t.Namespace)
 				if change {
 					// Attempt to create
-					_, err := roleStorage.CreateRoleWithEscalation(ctx, t)
+					_, err := authStorage.Role.CreateRoleWithEscalation(ctx, t)
 					// Unconditional replace if it already exists
 					if kapierrors.IsAlreadyExists(err) {
-						_, _, err = roleStorage.UpdateRoleWithEscalation(ctx, t)
+						_, _, err = authStorage.Role.UpdateRoleWithEscalation(ctx, t)
 					}
 					// Delete and recreate as a last resort
 					if err != nil {
-						roleStorage.Delete(ctx, t.Name, nil)
-						_, err = roleStorage.CreateRoleWithEscalation(ctx, t)
+						authStorage.Role.Delete(ctx, t.Name, nil)
+						_, err = authStorage.Role.CreateRoleWithEscalation(ctx, t)
 					}
 					// Gather any error
 					if err != nil {
@@ -208,18 +165,18 @@ func OverwriteBootstrapPolicy(optsGetter restoptions.Getter, policyFile, createB
 					}
 				}
 			case *authorizationapi.RoleBinding:
-				ctx := kapi.WithNamespace(kapi.NewContext(), t.Namespace)
+				ctx := apirequest.WithNamespace(apirequest.NewContext(), t.Namespace)
 				if change {
 					// Attempt to create
-					_, err := roleBindingStorage.CreateRoleBindingWithEscalation(ctx, t)
+					_, err := authStorage.RoleBinding.CreateRoleBindingWithEscalation(ctx, t)
 					// Unconditional replace if it already exists
 					if kapierrors.IsAlreadyExists(err) {
-						_, _, err = roleBindingStorage.UpdateRoleBindingWithEscalation(ctx, t)
+						_, _, err = authStorage.RoleBinding.UpdateRoleBindingWithEscalation(ctx, t)
 					}
 					// Delete and recreate as a last resort
 					if err != nil {
-						roleBindingStorage.Delete(ctx, t.Name, nil)
-						_, err = roleBindingStorage.CreateRoleBindingWithEscalation(ctx, t)
+						authStorage.RoleBinding.Delete(ctx, t.Name, nil)
+						_, err = authStorage.RoleBinding.CreateRoleBindingWithEscalation(ctx, t)
 					}
 					// Gather any error
 					if err != nil {
@@ -233,18 +190,18 @@ func OverwriteBootstrapPolicy(optsGetter restoptions.Getter, policyFile, createB
 				}
 
 			case *authorizationapi.ClusterRole:
-				ctx := kapi.WithNamespace(kapi.NewContext(), t.Namespace)
+				ctx := apirequest.WithNamespace(apirequest.NewContext(), t.Namespace)
 				if change {
 					// Attempt to create
-					_, err := clusterRoleStorage.CreateClusterRoleWithEscalation(ctx, t)
+					_, err := authStorage.ClusterRole.CreateClusterRoleWithEscalation(ctx, t)
 					// Unconditional replace if it already exists
 					if kapierrors.IsAlreadyExists(err) {
-						_, _, err = clusterRoleStorage.UpdateClusterRoleWithEscalation(ctx, t)
+						_, _, err = authStorage.ClusterRole.UpdateClusterRoleWithEscalation(ctx, t)
 					}
 					// Delete and recreate as a last resort
 					if err != nil {
-						clusterRoleStorage.Delete(ctx, t.Name, nil)
-						_, err = clusterRoleStorage.CreateClusterRoleWithEscalation(ctx, t)
+						authStorage.ClusterRole.Delete(ctx, t.Name, nil)
+						_, err = authStorage.ClusterRole.CreateClusterRoleWithEscalation(ctx, t)
 					}
 					// Gather any error
 					if err != nil {
@@ -257,18 +214,18 @@ func OverwriteBootstrapPolicy(optsGetter restoptions.Getter, policyFile, createB
 					}
 				}
 			case *authorizationapi.ClusterRoleBinding:
-				ctx := kapi.WithNamespace(kapi.NewContext(), t.Namespace)
+				ctx := apirequest.WithNamespace(apirequest.NewContext(), t.Namespace)
 				if change {
 					// Attempt to create
-					_, err := clusterRoleBindingStorage.CreateClusterRoleBindingWithEscalation(ctx, t)
+					_, err := authStorage.ClusterRoleBinding.CreateClusterRoleBindingWithEscalation(ctx, t)
 					// Unconditional replace if it already exists
 					if kapierrors.IsAlreadyExists(err) {
-						_, _, err = clusterRoleBindingStorage.UpdateClusterRoleBindingWithEscalation(ctx, t)
+						_, _, err = authStorage.ClusterRoleBinding.UpdateClusterRoleBindingWithEscalation(ctx, t)
 					}
 					// Delete and recreate as a last resort
 					if err != nil {
-						clusterRoleBindingStorage.Delete(ctx, t.Name, nil)
-						_, err = clusterRoleBindingStorage.CreateClusterRoleBindingWithEscalation(ctx, t)
+						authStorage.ClusterRoleBinding.Delete(ctx, t.Name, nil)
+						_, err = authStorage.ClusterRoleBinding.CreateClusterRoleBindingWithEscalation(ctx, t)
 					}
 					// Gather any error
 					if err != nil {
@@ -290,46 +247,4 @@ func OverwriteBootstrapPolicy(optsGetter restoptions.Getter, policyFile, createB
 		}
 		return kerrors.NewAggregate(errs)
 	})
-}
-
-type policyListerNamespacer struct {
-	registry policyregistry.Registry
-}
-
-func (s policyListerNamespacer) Policies(namespace string) client.PolicyLister {
-	return policyLister{registry: s.registry, namespace: namespace}
-}
-
-type policyLister struct {
-	registry  policyregistry.Registry
-	namespace string
-}
-
-func (s policyLister) List(options kapi.ListOptions) (*authorizationapi.PolicyList, error) {
-	return s.registry.ListPolicies(kapi.WithNamespace(kapi.NewContext(), s.namespace), &options)
-}
-
-func (s policyLister) Get(name string) (*authorizationapi.Policy, error) {
-	return s.registry.GetPolicy(kapi.WithNamespace(kapi.NewContext(), s.namespace), name)
-}
-
-type policyBindingListerNamespacer struct {
-	registry policybindingregistry.Registry
-}
-
-func (s policyBindingListerNamespacer) PolicyBindings(namespace string) client.PolicyBindingLister {
-	return policyBindingLister{registry: s.registry, namespace: namespace}
-}
-
-type policyBindingLister struct {
-	registry  policybindingregistry.Registry
-	namespace string
-}
-
-func (s policyBindingLister) List(options kapi.ListOptions) (*authorizationapi.PolicyBindingList, error) {
-	return s.registry.ListPolicyBindings(kapi.WithNamespace(kapi.NewContext(), s.namespace), &options)
-}
-
-func (s policyBindingLister) Get(name string) (*authorizationapi.PolicyBinding, error) {
-	return s.registry.GetPolicyBinding(kapi.WithNamespace(kapi.NewContext(), s.namespace), name)
 }

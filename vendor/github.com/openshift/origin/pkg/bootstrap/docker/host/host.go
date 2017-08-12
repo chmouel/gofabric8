@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	docker "github.com/fsouza/go-dockerclient"
+	"github.com/docker/engine-api/types"
 	"github.com/golang/glog"
 
 	"github.com/openshift/origin/pkg/bootstrap/docker/dockerhelper"
@@ -22,10 +22,11 @@ for dir in %s; do
   fi
 done
 `
-	cmdCreateVolumesDirBindMount = "cat /rootfs/proc/1/mountinfo | grep /var/lib/origin || " +
-		"nsenter --mount=/rootfs/proc/1/ns/mnt mount -o bind %[1]s %[1]s"
-	cmdCreateVolumesDirShare = "cat /rootfs/proc/1/mountinfo | grep %[1]s | grep shared || " +
-		"nsenter --mount=/rootfs/proc/1/ns/mnt mount --make-shared %[1]s"
+	ensureVolumeShareCmd = `#/bin/bash
+nsenter --mount=/rootfs/proc/1/ns/mnt mkdir -p %[1]s
+grep -F %[1]s /rootfs/proc/1/mountinfo || nsenter --mount=/rootfs/proc/1/ns/mnt mount -o bind %[1]s %[1]s
+grep -F %[1]s /rootfs/proc/1/mountinfo | grep shared || nsenter --mount=/rootfs/proc/1/ns/mnt mount --make-shared %[1]s
+`
 
 	DefaultVolumesDir           = "/var/lib/origin/openshift.local.volumes"
 	DefaultConfigDir            = "/var/lib/origin/openshift.local.config"
@@ -35,8 +36,8 @@ done
 // HostHelper contains methods to help check settings on a Docker host machine
 // using a privileged container
 type HostHelper struct {
+	client               dockerhelper.Interface
 	runHelper            *run.RunHelper
-	client               *docker.Client
 	image                string
 	volumesDir           string
 	configDir            string
@@ -45,10 +46,10 @@ type HostHelper struct {
 }
 
 // NewHostHelper creates a new HostHelper
-func NewHostHelper(client *docker.Client, image, volumesDir, configDir, dataDir, pvDir string) *HostHelper {
+func NewHostHelper(dockerHelper *dockerhelper.Helper, image, volumesDir, configDir, dataDir, pvDir string) *HostHelper {
 	return &HostHelper{
-		runHelper:            run.NewRunHelper(client),
-		client:               client,
+		runHelper:            run.NewRunHelper(dockerHelper),
+		client:               dockerHelper.Client(),
 		image:                image,
 		volumesDir:           volumesDir,
 		configDir:            configDir,
@@ -72,11 +73,17 @@ func (h *HostHelper) CanUseNsenterMounter() (bool, error) {
 // EnsureVolumeShare ensures that the host Docker machine has a shared directory that can be used
 // for OpenShift volumes
 func (h *HostHelper) EnsureVolumeShare() error {
-	if err := h.ensureVolumesDirBindMount(); err != nil {
-		return err
-	}
-	if err := h.ensureVolumesDirShare(); err != nil {
-		return err
+	cmd := fmt.Sprintf(ensureVolumeShareCmd, h.volumesDir)
+	rc, err := h.runner().
+		Image(h.image).
+		DiscardContainer().
+		HostPid().
+		Privileged().
+		Bind("/proc:/rootfs/proc:ro").
+		Entrypoint("/bin/bash").
+		Command("-c", cmd).Run()
+	if err != nil || rc != 0 {
+		return errors.NewError("cannot create volume share").WithCause(err)
 	}
 	return nil
 }
@@ -96,7 +103,7 @@ func (h *HostHelper) DownloadDirFromContainer(sourceDir, destDir string) error {
 		return err
 	}
 	defer func() {
-		errors.LogError(h.client.RemoveContainer(docker.RemoveContainerOptions{ID: container}))
+		errors.LogError(h.client.ContainerRemove(container, types.ContainerRemoveOptions{}))
 	}()
 	err = dockerhelper.DownloadDirFromContainer(h.client, container, sourceDir, destDir)
 	if err != nil {
@@ -118,7 +125,7 @@ func (h *HostHelper) UploadFileToContainer(src, dst string) error {
 		return err
 	}
 	defer func() {
-		errors.LogError(h.client.RemoveContainer(docker.RemoveContainerOptions{ID: container}))
+		errors.LogError(h.client.ContainerRemove(container, types.ContainerRemoveOptions{}))
 	}()
 	err = dockerhelper.UploadFileToContainer(h.client, container, src, dst)
 	if err != nil {
@@ -174,35 +181,6 @@ func (h *HostHelper) EnsureHostDirectories(createVolumeShare bool) error {
 	}
 	if createVolumeShare {
 		return h.EnsureVolumeShare()
-	}
-	return nil
-}
-
-func (h *HostHelper) hostPidCmd(cmd string) (int, error) {
-	return h.runner().
-		Image(h.image).
-		DiscardContainer().
-		HostPid().
-		Privileged().
-		Bind("/proc:/rootfs/proc:ro").
-		Entrypoint("/bin/bash").
-		Command("-c", cmd).Run()
-}
-
-func (h *HostHelper) ensureVolumesDirBindMount() error {
-	cmd := fmt.Sprintf(cmdCreateVolumesDirBindMount, h.volumesDir)
-	rc, err := h.hostPidCmd(cmd)
-	if err != nil || rc != 0 {
-		return errors.NewError("cannot create volumes dir mount").WithCause(err)
-	}
-	return nil
-}
-
-func (h *HostHelper) ensureVolumesDirShare() error {
-	cmd := fmt.Sprintf(cmdCreateVolumesDirShare, h.volumesDir)
-	rc, err := h.hostPidCmd(cmd)
-	if err != nil || rc != 0 {
-		return errors.NewError("cannot create volumes dir share").WithCause(err)
 	}
 	return nil
 }

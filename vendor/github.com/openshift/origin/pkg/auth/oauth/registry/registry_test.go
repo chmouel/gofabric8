@@ -9,20 +9,19 @@ import (
 
 	"github.com/RangelReale/osin"
 	"github.com/RangelReale/osincli"
-	kapi "k8s.io/kubernetes/pkg/api"
-	apierrs "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/unversioned"
+	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/origin/pkg/auth/api"
 	"github.com/openshift/origin/pkg/auth/oauth/handlers"
 	"github.com/openshift/origin/pkg/auth/userregistry/identitymapper"
-	oapi "github.com/openshift/origin/pkg/oauth/api"
+	oapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
 	"github.com/openshift/origin/pkg/oauth/registry/test"
 	"github.com/openshift/origin/pkg/oauth/server/osinserver"
 	"github.com/openshift/origin/pkg/oauth/server/osinserver/registrystorage"
-	userapi "github.com/openshift/origin/pkg/user/api"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
 	usertest "github.com/openshift/origin/pkg/user/registry/test"
-	"k8s.io/kubernetes/pkg/auth/user"
+	"k8s.io/apiserver/pkg/authentication/user"
 )
 
 type testHandlers struct {
@@ -93,13 +92,13 @@ func TestRegistryAndServer(t *testing.T) {
 	}))
 
 	validClient := &oapi.OAuthClient{
-		ObjectMeta:   kapi.ObjectMeta{Name: "test"},
+		ObjectMeta:   metav1.ObjectMeta{Name: "test"},
 		Secret:       "secret",
 		RedirectURIs: []string{assertServer.URL + "/assert"},
 	}
 
 	restrictedClient := &oapi.OAuthClient{
-		ObjectMeta:   kapi.ObjectMeta{Name: "test"},
+		ObjectMeta:   metav1.ObjectMeta{Name: "test"},
 		Secret:       "secret",
 		RedirectURIs: []string{assertServer.URL + "/assert"},
 		ScopeRestrictions: []oapi.ScopeRestriction{
@@ -341,7 +340,7 @@ func TestAuthenticateTokenExpired(t *testing.T) {
 	tokenRegistry := &test.AccessTokenRegistry{
 		Err: nil,
 		AccessToken: &oapi.OAuthAccessToken{
-			ObjectMeta: kapi.ObjectMeta{CreationTimestamp: unversioned.Time{Time: time.Now().Add(-1 * time.Hour)}},
+			ObjectMeta: metav1.ObjectMeta{CreationTimestamp: metav1.Time{Time: time.Now().Add(-1 * time.Hour)}},
 			ExpiresIn:  600, // 10 minutes
 		},
 	}
@@ -363,14 +362,14 @@ func TestAuthenticateTokenValidated(t *testing.T) {
 	tokenRegistry := &test.AccessTokenRegistry{
 		Err: nil,
 		AccessToken: &oapi.OAuthAccessToken{
-			ObjectMeta: kapi.ObjectMeta{CreationTimestamp: unversioned.Time{Time: time.Now()}},
+			ObjectMeta: metav1.ObjectMeta{CreationTimestamp: metav1.Time{Time: time.Now()}},
 			ExpiresIn:  600, // 10 minutes
 			UserName:   "foo",
 			UserUID:    string("bar"),
 		},
 	}
 	userRegistry := usertest.NewUserRegistry()
-	userRegistry.Get["foo"] = &userapi.User{ObjectMeta: kapi.ObjectMeta{UID: "bar"}}
+	userRegistry.Get["foo"] = &userapi.User{ObjectMeta: metav1.ObjectMeta{UID: "bar"}}
 
 	tokenAuthenticator := NewTokenAuthenticator(tokenRegistry, userRegistry, identitymapper.NoopGroupMapper{})
 

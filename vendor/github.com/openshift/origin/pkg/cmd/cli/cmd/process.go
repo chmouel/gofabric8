@@ -9,17 +9,18 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/meta"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/apimachinery/registered"
 	"k8s.io/kubernetes/pkg/kubectl"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/runtime"
-	kerrors "k8s.io/kubernetes/pkg/util/errors"
-	"k8s.io/kubernetes/pkg/util/sets"
+	kprinters "k8s.io/kubernetes/pkg/printers"
 
 	"github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/cli/describe"
@@ -28,8 +29,8 @@ import (
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
 	"github.com/openshift/origin/pkg/generate/app"
 	"github.com/openshift/origin/pkg/template"
-	templateapi "github.com/openshift/origin/pkg/template/api"
-	templatevalidation "github.com/openshift/origin/pkg/template/api/validation"
+	templateapi "github.com/openshift/origin/pkg/template/apis/template"
+	templatevalidation "github.com/openshift/origin/pkg/template/apis/template/validation"
 	"github.com/openshift/origin/pkg/template/generator"
 )
 
@@ -177,7 +178,7 @@ func RunProcess(f *clientcmd.Factory, in io.Reader, out, errout io.Writer, cmd *
 
 	if local {
 		// TODO: Change f.Object() so that it can fall back to local RESTMapper safely (currently glog.Fatals)
-		mapper = registered.RESTMapper()
+		mapper = kapi.Registry.RESTMapper()
 		typer = kapi.Scheme
 		clientMappingFn = func(*meta.RESTMapping) (resource.RESTClient, error) { return nil, nil }
 		// client is deliberately left nil
@@ -214,23 +215,22 @@ func RunProcess(f *clientcmd.Factory, in io.Reader, out, errout io.Writer, cmd *
 			return fmt.Errorf("invalid value syntax %q", templateName)
 		}
 
-		templateObj, err := client.Templates(sourceNamespace).Get(storedTemplate)
+		templateObj, err := client.Templates(sourceNamespace).Get(storedTemplate, metav1.GetOptions{})
 		if err != nil {
 			if errors.IsNotFound(err) {
 				return fmt.Errorf("template %q could not be found", storedTemplate)
 			}
 			return err
 		}
-		templateObj.CreationTimestamp = unversioned.Now()
+		templateObj.CreationTimestamp = metav1.Now()
 		infos = append(infos, &resource.Info{Object: templateObj})
 	} else {
 		infos, err = resource.NewBuilder(mapper, typer, clientMappingFn, kapi.Codecs.UniversalDecoder()).
-			NamespaceParam(namespace).RequireNamespace().
 			FilenameParam(explicit, &resource.FilenameOptions{Recursive: false, Filenames: []string{filename}}).
 			Do().
 			Infos()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to read input object (not a Template?): %v", err)
 		}
 	}
 
@@ -306,16 +306,23 @@ func RunProcess(f *clientcmd.Factory, in io.Reader, out, errout io.Writer, cmd *
 	}
 	objects = append(objects, resultObj.Objects...)
 
-	p, _, err := kcmdutil.PrinterForCommand(cmd)
+	p, _, err := f.PrinterForCommand(cmd)
 	if err != nil {
 		return err
 	}
-	gv := mapping.GroupVersionKind.GroupVersion()
-	version, err := kcmdutil.OutputVersion(cmd, &gv)
-	if err != nil {
-		return err
+	var version schema.GroupVersion
+	outputVersionString := kcmdutil.GetFlagString(cmd, "output-version")
+	if len(outputVersionString) == 0 {
+		version = mapping.GroupVersionKind.GroupVersion()
+	} else {
+		version, err = schema.ParseGroupVersion(outputVersionString)
+		if err != nil {
+			return err
+		}
 	}
-	p = kubectl.NewVersionedPrinter(p, kapi.Scheme, version)
+	// Prefer the Kubernetes core group for the List over the template.openshift.io
+	version.Group = kapi.GroupName
+	p = kprinters.NewVersionedPrinter(p, kapi.Scheme, version)
 
 	// use generic output
 	if kcmdutil.GetFlagBool(cmd, "raw") {
@@ -326,7 +333,7 @@ func RunProcess(f *clientcmd.Factory, in io.Reader, out, errout io.Writer, cmd *
 	}
 
 	return p.PrintObj(&kapi.List{
-		ListMeta: unversioned.ListMeta{},
+		ListMeta: metav1.ListMeta{},
 		Items:    objects,
 	}, out)
 }

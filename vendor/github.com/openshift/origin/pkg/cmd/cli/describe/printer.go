@@ -9,23 +9,26 @@ import (
 	"text/tabwriter"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	kctl "k8s.io/kubernetes/pkg/kubectl"
-	"k8s.io/kubernetes/pkg/util/sets"
+	kprinters "k8s.io/kubernetes/pkg/printers"
+	kinternalprinters "k8s.io/kubernetes/pkg/printers/internalversion"
 
 	oapi "github.com/openshift/origin/pkg/api"
-	authorizationapi "github.com/openshift/origin/pkg/authorization/api"
-	buildapi "github.com/openshift/origin/pkg/build/api"
-	deployapi "github.com/openshift/origin/pkg/deploy/api"
-	imageapi "github.com/openshift/origin/pkg/image/api"
-	oauthapi "github.com/openshift/origin/pkg/oauth/api"
-	projectapi "github.com/openshift/origin/pkg/project/api"
-	quotaapi "github.com/openshift/origin/pkg/quota/api"
-	routeapi "github.com/openshift/origin/pkg/route/api"
-	sdnapi "github.com/openshift/origin/pkg/sdn/api"
-	templateapi "github.com/openshift/origin/pkg/template/api"
-	userapi "github.com/openshift/origin/pkg/user/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	deployapi "github.com/openshift/origin/pkg/deploy/apis/apps"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
+	oauthapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
+	projectapi "github.com/openshift/origin/pkg/project/apis/project"
+	quotaapi "github.com/openshift/origin/pkg/quota/apis/quota"
+	routeapi "github.com/openshift/origin/pkg/route/apis/route"
+	sdnapi "github.com/openshift/origin/pkg/sdn/apis/network"
+	securityapi "github.com/openshift/origin/pkg/security/apis/security"
+	templateapi "github.com/openshift/origin/pkg/template/apis/template"
+	userapi "github.com/openshift/origin/pkg/user/apis/user"
 )
 
 var (
@@ -65,85 +68,99 @@ var (
 	clusterResourceQuotaColumns = []string{"NAME", "LABEL SELECTOR", "ANNOTATION SELECTOR"}
 
 	roleBindingRestrictionColumns = []string{"NAME", "SUBJECT TYPE", "SUBJECTS"}
+
+	templateInstanceColumns       = []string{"NAME", "TEMPLATE"}
+	brokerTemplateInstanceColumns = []string{"NAME", "TEMPLATEINSTANCE"}
+
+	securityContextConstraintsColumns = []string{"NAME", "PRIV", "CAPS", "SELINUX", "RUNASUSER", "FSGROUP", "SUPGROUP", "PRIORITY", "READONLYROOTFS", "VOLUMES"}
 )
 
 // NewHumanReadablePrinter returns a new HumanReadablePrinter
-func NewHumanReadablePrinter(printOptions kctl.PrintOptions) *kctl.HumanReadablePrinter {
+func NewHumanReadablePrinter(encoder runtime.Encoder, decoder runtime.Decoder, printOptions kprinters.PrintOptions) *kprinters.HumanReadablePrinter {
 	// TODO: support cross namespace listing
-	p := kctl.NewHumanReadablePrinter(printOptions)
-	p.Handler(buildColumns, printBuild)
-	p.Handler(buildColumns, printBuildList)
-	p.Handler(buildConfigColumns, printBuildConfig)
-	p.Handler(buildConfigColumns, printBuildConfigList)
-	p.Handler(imageColumns, printImage)
-	p.Handler(imageStreamTagColumns, printImageStreamTag)
-	p.Handler(imageStreamTagColumns, printImageStreamTagList)
-	p.Handler(imageStreamImageColumns, printImageStreamImage)
-	p.Handler(imageColumns, printImageList)
-	p.Handler(imageStreamColumns, printImageStream)
-	p.Handler(imageStreamColumns, printImageStreamList)
-	p.Handler(projectColumns, printProject)
-	p.Handler(projectColumns, printProjectList)
-	p.Handler(routeColumns, printRoute)
-	p.Handler(routeColumns, printRouteList)
-	p.Handler(deploymentConfigColumns, printDeploymentConfig)
-	p.Handler(deploymentConfigColumns, printDeploymentConfigList)
-	p.Handler(templateColumns, printTemplate)
-	p.Handler(templateColumns, printTemplateList)
+	p := kprinters.NewHumanReadablePrinter(encoder, decoder, printOptions)
+	kinternalprinters.AddHandlers(p)
+	p.Handler(buildColumns, nil, printBuild)
+	p.Handler(buildColumns, nil, printBuildList)
+	p.Handler(buildConfigColumns, nil, printBuildConfig)
+	p.Handler(buildConfigColumns, nil, printBuildConfigList)
+	p.Handler(imageColumns, nil, printImage)
+	p.Handler(imageStreamTagColumns, nil, printImageStreamTag)
+	p.Handler(imageStreamTagColumns, nil, printImageStreamTagList)
+	p.Handler(imageStreamImageColumns, nil, printImageStreamImage)
+	p.Handler(imageColumns, nil, printImageList)
+	p.Handler(imageStreamColumns, nil, printImageStream)
+	p.Handler(imageStreamColumns, nil, printImageStreamList)
+	p.Handler(projectColumns, nil, printProject)
+	p.Handler(projectColumns, nil, printProjectList)
+	p.Handler(routeColumns, nil, printRoute)
+	p.Handler(routeColumns, nil, printRouteList)
+	p.Handler(deploymentConfigColumns, nil, printDeploymentConfig)
+	p.Handler(deploymentConfigColumns, nil, printDeploymentConfigList)
+	p.Handler(templateColumns, nil, printTemplate)
+	p.Handler(templateColumns, nil, printTemplateList)
 
-	p.Handler(policyColumns, printPolicy)
-	p.Handler(policyColumns, printPolicyList)
-	p.Handler(policyBindingColumns, printPolicyBinding)
-	p.Handler(policyBindingColumns, printPolicyBindingList)
-	p.Handler(roleBindingColumns, printRoleBinding)
-	p.Handler(roleBindingColumns, printRoleBindingList)
-	p.Handler(roleColumns, printRole)
-	p.Handler(roleColumns, printRoleList)
+	p.Handler(policyColumns, nil, printPolicy)
+	p.Handler(policyColumns, nil, printPolicyList)
+	p.Handler(policyBindingColumns, nil, printPolicyBinding)
+	p.Handler(policyBindingColumns, nil, printPolicyBindingList)
+	p.Handler(roleBindingColumns, nil, printRoleBinding)
+	p.Handler(roleBindingColumns, nil, printRoleBindingList)
+	p.Handler(roleColumns, nil, printRole)
+	p.Handler(roleColumns, nil, printRoleList)
 
-	p.Handler(policyColumns, printClusterPolicy)
-	p.Handler(policyColumns, printClusterPolicyList)
-	p.Handler(policyBindingColumns, printClusterPolicyBinding)
-	p.Handler(policyBindingColumns, printClusterPolicyBindingList)
-	p.Handler(roleColumns, printClusterRole)
-	p.Handler(roleColumns, printClusterRoleList)
-	p.Handler(roleBindingColumns, printClusterRoleBinding)
-	p.Handler(roleBindingColumns, printClusterRoleBindingList)
+	p.Handler(policyColumns, nil, printClusterPolicy)
+	p.Handler(policyColumns, nil, printClusterPolicyList)
+	p.Handler(policyBindingColumns, nil, printClusterPolicyBinding)
+	p.Handler(policyBindingColumns, nil, printClusterPolicyBindingList)
+	p.Handler(roleColumns, nil, printClusterRole)
+	p.Handler(roleColumns, nil, printClusterRoleList)
+	p.Handler(roleBindingColumns, nil, printClusterRoleBinding)
+	p.Handler(roleBindingColumns, nil, printClusterRoleBindingList)
 
-	p.Handler(oauthClientColumns, printOAuthClient)
-	p.Handler(oauthClientColumns, printOAuthClientList)
-	p.Handler(oauthClientAuthorizationColumns, printOAuthClientAuthorization)
-	p.Handler(oauthClientAuthorizationColumns, printOAuthClientAuthorizationList)
-	p.Handler(oauthAccessTokenColumns, printOAuthAccessToken)
-	p.Handler(oauthAccessTokenColumns, printOAuthAccessTokenList)
-	p.Handler(oauthAuthorizeTokenColumns, printOAuthAuthorizeToken)
-	p.Handler(oauthAuthorizeTokenColumns, printOAuthAuthorizeTokenList)
+	p.Handler(oauthClientColumns, nil, printOAuthClient)
+	p.Handler(oauthClientColumns, nil, printOAuthClientList)
+	p.Handler(oauthClientAuthorizationColumns, nil, printOAuthClientAuthorization)
+	p.Handler(oauthClientAuthorizationColumns, nil, printOAuthClientAuthorizationList)
+	p.Handler(oauthAccessTokenColumns, nil, printOAuthAccessToken)
+	p.Handler(oauthAccessTokenColumns, nil, printOAuthAccessTokenList)
+	p.Handler(oauthAuthorizeTokenColumns, nil, printOAuthAuthorizeToken)
+	p.Handler(oauthAuthorizeTokenColumns, nil, printOAuthAuthorizeTokenList)
 
-	p.Handler(userColumns, printUser)
-	p.Handler(userColumns, printUserList)
-	p.Handler(identityColumns, printIdentity)
-	p.Handler(identityColumns, printIdentityList)
-	p.Handler(userIdentityMappingColumns, printUserIdentityMapping)
-	p.Handler(groupColumns, printGroup)
-	p.Handler(groupColumns, printGroupList)
+	p.Handler(userColumns, nil, printUser)
+	p.Handler(userColumns, nil, printUserList)
+	p.Handler(identityColumns, nil, printIdentity)
+	p.Handler(identityColumns, nil, printIdentityList)
+	p.Handler(userIdentityMappingColumns, nil, printUserIdentityMapping)
+	p.Handler(groupColumns, nil, printGroup)
+	p.Handler(groupColumns, nil, printGroupList)
 
-	p.Handler(IsPersonalSubjectAccessReviewColumns, printIsPersonalSubjectAccessReview)
+	p.Handler(IsPersonalSubjectAccessReviewColumns, nil, printIsPersonalSubjectAccessReview)
 
-	p.Handler(hostSubnetColumns, printHostSubnet)
-	p.Handler(hostSubnetColumns, printHostSubnetList)
-	p.Handler(netNamespaceColumns, printNetNamespaceList)
-	p.Handler(netNamespaceColumns, printNetNamespace)
-	p.Handler(clusterNetworkColumns, printClusterNetwork)
-	p.Handler(clusterNetworkColumns, printClusterNetworkList)
-	p.Handler(egressNetworkPolicyColumns, printEgressNetworkPolicy)
-	p.Handler(egressNetworkPolicyColumns, printEgressNetworkPolicyList)
+	p.Handler(hostSubnetColumns, nil, printHostSubnet)
+	p.Handler(hostSubnetColumns, nil, printHostSubnetList)
+	p.Handler(netNamespaceColumns, nil, printNetNamespaceList)
+	p.Handler(netNamespaceColumns, nil, printNetNamespace)
+	p.Handler(clusterNetworkColumns, nil, printClusterNetwork)
+	p.Handler(clusterNetworkColumns, nil, printClusterNetworkList)
+	p.Handler(egressNetworkPolicyColumns, nil, printEgressNetworkPolicy)
+	p.Handler(egressNetworkPolicyColumns, nil, printEgressNetworkPolicyList)
 
-	p.Handler(clusterResourceQuotaColumns, printClusterResourceQuota)
-	p.Handler(clusterResourceQuotaColumns, printClusterResourceQuotaList)
-	p.Handler(clusterResourceQuotaColumns, printAppliedClusterResourceQuota)
-	p.Handler(clusterResourceQuotaColumns, printAppliedClusterResourceQuotaList)
+	p.Handler(clusterResourceQuotaColumns, nil, printClusterResourceQuota)
+	p.Handler(clusterResourceQuotaColumns, nil, printClusterResourceQuotaList)
+	p.Handler(clusterResourceQuotaColumns, nil, printAppliedClusterResourceQuota)
+	p.Handler(clusterResourceQuotaColumns, nil, printAppliedClusterResourceQuotaList)
 
-	p.Handler(roleBindingRestrictionColumns, printRoleBindingRestriction)
-	p.Handler(roleBindingRestrictionColumns, printRoleBindingRestrictionList)
+	p.Handler(roleBindingRestrictionColumns, nil, printRoleBindingRestriction)
+	p.Handler(roleBindingRestrictionColumns, nil, printRoleBindingRestrictionList)
+
+	p.Handler(templateInstanceColumns, nil, printTemplateInstance)
+	p.Handler(templateInstanceColumns, nil, printTemplateInstanceList)
+	p.Handler(brokerTemplateInstanceColumns, nil, printBrokerTemplateInstance)
+	p.Handler(brokerTemplateInstanceColumns, nil, printBrokerTemplateInstanceList)
+
+	p.Handler(securityContextConstraintsColumns, nil, printSecurityContextConstraints)
+	p.Handler(securityContextConstraintsColumns, nil, printSecurityContextConstraintsList)
 
 	return p
 }
@@ -179,7 +196,7 @@ func formatResourceName(kind, name string, withKind bool) string {
 	return kind + "/" + name
 }
 
-func printTemplate(t *templateapi.Template, w io.Writer, opts kctl.PrintOptions) error {
+func printTemplate(t *templateapi.Template, w io.Writer, opts kprinters.PrintOptions) error {
 	description := ""
 	if t.Annotations != nil {
 		description = t.Annotations["description"]
@@ -228,7 +245,7 @@ func printTemplate(t *templateapi.Template, w io.Writer, opts kctl.PrintOptions)
 	return nil
 }
 
-func printTemplateList(list *templateapi.TemplateList, w io.Writer, opts kctl.PrintOptions) error {
+func printTemplateList(list *templateapi.TemplateList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, t := range list.Items {
 		if err := printTemplate(&t, w, opts); err != nil {
 			return err
@@ -237,7 +254,7 @@ func printTemplateList(list *templateapi.TemplateList, w io.Writer, opts kctl.Pr
 	return nil
 }
 
-func printBuild(build *buildapi.Build, w io.Writer, opts kctl.PrintOptions) error {
+func printBuild(build *buildapi.Build, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, build.Name, opts.WithKind)
 
 	if opts.WithNamespace {
@@ -310,7 +327,7 @@ func describeSourceGitRevision(spec buildapi.CommonSpec) string {
 	return rev
 }
 
-func printBuildList(buildList *buildapi.BuildList, w io.Writer, opts kctl.PrintOptions) error {
+func printBuildList(buildList *buildapi.BuildList, w io.Writer, opts kprinters.PrintOptions) error {
 	builds := buildList.Items
 	sort.Sort(buildapi.BuildSliceByCreationTimestamp(builds))
 	for _, build := range builds {
@@ -321,7 +338,7 @@ func printBuildList(buildList *buildapi.BuildList, w io.Writer, opts kctl.PrintO
 	return nil
 }
 
-func printBuildConfig(bc *buildapi.BuildConfig, w io.Writer, opts kctl.PrintOptions) error {
+func printBuildConfig(bc *buildapi.BuildConfig, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, bc.Name, opts.WithKind)
 	from := describeSourceShort(bc.Spec.CommonSpec)
 
@@ -348,7 +365,7 @@ func printBuildConfig(bc *buildapi.BuildConfig, w io.Writer, opts kctl.PrintOpti
 	return nil
 }
 
-func printBuildConfigList(buildList *buildapi.BuildConfigList, w io.Writer, opts kctl.PrintOptions) error {
+func printBuildConfigList(buildList *buildapi.BuildConfigList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, buildConfig := range buildList.Items {
 		if err := printBuildConfig(&buildConfig, w, opts); err != nil {
 			return err
@@ -357,13 +374,13 @@ func printBuildConfigList(buildList *buildapi.BuildConfigList, w io.Writer, opts
 	return nil
 }
 
-func printImage(image *imageapi.Image, w io.Writer, opts kctl.PrintOptions) error {
+func printImage(image *imageapi.Image, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, image.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\n", name, image.DockerImageReference)
 	return err
 }
 
-func printImageStreamTag(ist *imageapi.ImageStreamTag, w io.Writer, opts kctl.PrintOptions) error {
+func printImageStreamTag(ist *imageapi.ImageStreamTag, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, ist.Name, opts.WithKind)
 	created := fmt.Sprintf("%s ago", formatRelativeTime(ist.CreationTimestamp.Time))
 
@@ -381,7 +398,7 @@ func printImageStreamTag(ist *imageapi.ImageStreamTag, w io.Writer, opts kctl.Pr
 	return nil
 }
 
-func printImageStreamTagList(list *imageapi.ImageStreamTagList, w io.Writer, opts kctl.PrintOptions) error {
+func printImageStreamTagList(list *imageapi.ImageStreamTagList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, ist := range list.Items {
 		if err := printImageStreamTag(&ist, w, opts); err != nil {
 			return err
@@ -390,7 +407,7 @@ func printImageStreamTagList(list *imageapi.ImageStreamTagList, w io.Writer, opt
 	return nil
 }
 
-func printImageStreamImage(isi *imageapi.ImageStreamImage, w io.Writer, opts kctl.PrintOptions) error {
+func printImageStreamImage(isi *imageapi.ImageStreamImage, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, isi.Name, opts.WithKind)
 	created := fmt.Sprintf("%s ago", formatRelativeTime(isi.CreationTimestamp.Time))
 	if opts.WithNamespace {
@@ -407,7 +424,7 @@ func printImageStreamImage(isi *imageapi.ImageStreamImage, w io.Writer, opts kct
 	return nil
 }
 
-func printImageList(images *imageapi.ImageList, w io.Writer, opts kctl.PrintOptions) error {
+func printImageList(images *imageapi.ImageList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, image := range images.Items {
 		if err := printImage(&image, w, opts); err != nil {
 			return err
@@ -416,12 +433,12 @@ func printImageList(images *imageapi.ImageList, w io.Writer, opts kctl.PrintOpti
 	return nil
 }
 
-func printImageStream(stream *imageapi.ImageStream, w io.Writer, opts kctl.PrintOptions) error {
+func printImageStream(stream *imageapi.ImageStream, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, stream.Name, opts.WithKind)
 	tags := ""
 	const numOfTagsShown = 3
 
-	var latest unversioned.Time
+	var latest metav1.Time
 	for _, list := range stream.Status.Tags {
 		if len(list.Items) > 0 {
 			if list.Items[0].Created.After(latest.Time) {
@@ -461,7 +478,7 @@ func printImageStream(stream *imageapi.ImageStream, w io.Writer, opts kctl.Print
 	return nil
 }
 
-func printImageStreamList(streams *imageapi.ImageStreamList, w io.Writer, opts kctl.PrintOptions) error {
+func printImageStreamList(streams *imageapi.ImageStreamList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, stream := range streams.Items {
 		if err := printImageStream(&stream, w, opts); err != nil {
 			return err
@@ -470,7 +487,7 @@ func printImageStreamList(streams *imageapi.ImageStreamList, w io.Writer, opts k
 	return nil
 }
 
-func printProject(project *projectapi.Project, w io.Writer, opts kctl.PrintOptions) error {
+func printProject(project *projectapi.Project, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, project.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\t%s", name, project.Annotations[oapi.OpenShiftDisplayName], project.Status.Phase)
 	if err := appendItemLabels(project.Labels, w, opts.ColumnLabels, opts.ShowLabels); err != nil {
@@ -494,7 +511,7 @@ func (list SortableProjects) Less(i, j int) bool {
 	return list[i].ObjectMeta.Name < list[j].ObjectMeta.Name
 }
 
-func printProjectList(projects *projectapi.ProjectList, w io.Writer, opts kctl.PrintOptions) error {
+func printProjectList(projects *projectapi.ProjectList, w io.Writer, opts kprinters.PrintOptions) error {
 	sort.Sort(SortableProjects(projects.Items))
 	for _, project := range projects.Items {
 		if err := printProject(&project, w, opts); err != nil {
@@ -504,7 +521,7 @@ func printProjectList(projects *projectapi.ProjectList, w io.Writer, opts kctl.P
 	return nil
 }
 
-func printRoute(route *routeapi.Route, w io.Writer, opts kctl.PrintOptions) error {
+func printRoute(route *routeapi.Route, w io.Writer, opts kprinters.PrintOptions) error {
 	tlsTerm := ""
 	insecurePolicy := ""
 	if route.Spec.TLS != nil {
@@ -600,7 +617,7 @@ func printRoute(route *routeapi.Route, w io.Writer, opts kctl.PrintOptions) erro
 	return err
 }
 
-func printRouteList(routeList *routeapi.RouteList, w io.Writer, opts kctl.PrintOptions) error {
+func printRouteList(routeList *routeapi.RouteList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, route := range routeList.Items {
 		if err := printRoute(&route, w, opts); err != nil {
 			return err
@@ -609,7 +626,7 @@ func printRouteList(routeList *routeapi.RouteList, w io.Writer, opts kctl.PrintO
 	return nil
 }
 
-func printDeploymentConfig(dc *deployapi.DeploymentConfig, w io.Writer, opts kctl.PrintOptions) error {
+func printDeploymentConfig(dc *deployapi.DeploymentConfig, w io.Writer, opts kprinters.PrintOptions) error {
 	var desired string
 	if dc.Spec.Test {
 		desired = fmt.Sprintf("%d (during test)", dc.Spec.Replicas)
@@ -666,7 +683,7 @@ func printDeploymentConfig(dc *deployapi.DeploymentConfig, w io.Writer, opts kct
 	return err
 }
 
-func printDeploymentConfigList(list *deployapi.DeploymentConfigList, w io.Writer, opts kctl.PrintOptions) error {
+func printDeploymentConfigList(list *deployapi.DeploymentConfigList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, dc := range list.Items {
 		if err := printDeploymentConfig(&dc, w, opts); err != nil {
 			return err
@@ -675,7 +692,7 @@ func printDeploymentConfigList(list *deployapi.DeploymentConfigList, w io.Writer
 	return nil
 }
 
-func printPolicy(policy *authorizationapi.Policy, w io.Writer, opts kctl.PrintOptions) error {
+func printPolicy(policy *authorizationapi.Policy, w io.Writer, opts kprinters.PrintOptions) error {
 	roleNames := sets.String{}
 	for key := range policy.Roles {
 		roleNames.Insert(key)
@@ -698,7 +715,7 @@ func printPolicy(policy *authorizationapi.Policy, w io.Writer, opts kctl.PrintOp
 	return nil
 }
 
-func printPolicyList(list *authorizationapi.PolicyList, w io.Writer, opts kctl.PrintOptions) error {
+func printPolicyList(list *authorizationapi.PolicyList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, policy := range list.Items {
 		if err := printPolicy(&policy, w, opts); err != nil {
 			return err
@@ -707,7 +724,7 @@ func printPolicyList(list *authorizationapi.PolicyList, w io.Writer, opts kctl.P
 	return nil
 }
 
-func printPolicyBinding(policyBinding *authorizationapi.PolicyBinding, w io.Writer, opts kctl.PrintOptions) error {
+func printPolicyBinding(policyBinding *authorizationapi.PolicyBinding, w io.Writer, opts kprinters.PrintOptions) error {
 	roleBindingNames := sets.String{}
 	for key := range policyBinding.RoleBindings {
 		roleBindingNames.Insert(key)
@@ -730,7 +747,7 @@ func printPolicyBinding(policyBinding *authorizationapi.PolicyBinding, w io.Writ
 	return nil
 }
 
-func printPolicyBindingList(list *authorizationapi.PolicyBindingList, w io.Writer, opts kctl.PrintOptions) error {
+func printPolicyBindingList(list *authorizationapi.PolicyBindingList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, policyBinding := range list.Items {
 		if err := printPolicyBinding(&policyBinding, w, opts); err != nil {
 			return err
@@ -739,44 +756,44 @@ func printPolicyBindingList(list *authorizationapi.PolicyBindingList, w io.Write
 	return nil
 }
 
-func printClusterPolicy(policy *authorizationapi.ClusterPolicy, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterPolicy(policy *authorizationapi.ClusterPolicy, w io.Writer, opts kprinters.PrintOptions) error {
 	return printPolicy(authorizationapi.ToPolicy(policy), w, opts)
 }
 
-func printClusterPolicyList(list *authorizationapi.ClusterPolicyList, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterPolicyList(list *authorizationapi.ClusterPolicyList, w io.Writer, opts kprinters.PrintOptions) error {
 	return printPolicyList(authorizationapi.ToPolicyList(list), w, opts)
 }
 
-func printClusterPolicyBinding(policyBinding *authorizationapi.ClusterPolicyBinding, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterPolicyBinding(policyBinding *authorizationapi.ClusterPolicyBinding, w io.Writer, opts kprinters.PrintOptions) error {
 	return printPolicyBinding(authorizationapi.ToPolicyBinding(policyBinding), w, opts)
 }
 
-func printClusterPolicyBindingList(list *authorizationapi.ClusterPolicyBindingList, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterPolicyBindingList(list *authorizationapi.ClusterPolicyBindingList, w io.Writer, opts kprinters.PrintOptions) error {
 	return printPolicyBindingList(authorizationapi.ToPolicyBindingList(list), w, opts)
 }
 
-func printClusterRole(role *authorizationapi.ClusterRole, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterRole(role *authorizationapi.ClusterRole, w io.Writer, opts kprinters.PrintOptions) error {
 	return printRole(authorizationapi.ToRole(role), w, opts)
 }
 
-func printClusterRoleList(list *authorizationapi.ClusterRoleList, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterRoleList(list *authorizationapi.ClusterRoleList, w io.Writer, opts kprinters.PrintOptions) error {
 	return printRoleList(authorizationapi.ToRoleList(list), w, opts)
 }
 
-func printClusterRoleBinding(roleBinding *authorizationapi.ClusterRoleBinding, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterRoleBinding(roleBinding *authorizationapi.ClusterRoleBinding, w io.Writer, opts kprinters.PrintOptions) error {
 	return printRoleBinding(authorizationapi.ToRoleBinding(roleBinding), w, opts)
 }
 
-func printClusterRoleBindingList(list *authorizationapi.ClusterRoleBindingList, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterRoleBindingList(list *authorizationapi.ClusterRoleBindingList, w io.Writer, opts kprinters.PrintOptions) error {
 	return printRoleBindingList(authorizationapi.ToRoleBindingList(list), w, opts)
 }
 
-func printIsPersonalSubjectAccessReview(a *authorizationapi.IsPersonalSubjectAccessReview, w io.Writer, opts kctl.PrintOptions) error {
+func printIsPersonalSubjectAccessReview(a *authorizationapi.IsPersonalSubjectAccessReview, w io.Writer, opts kprinters.PrintOptions) error {
 	_, err := fmt.Fprintf(w, "IsPersonalSubjectAccessReview\n")
 	return err
 }
 
-func printRole(role *authorizationapi.Role, w io.Writer, opts kctl.PrintOptions) error {
+func printRole(role *authorizationapi.Role, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, role.Name, opts.WithKind)
 	if opts.WithNamespace {
 		if _, err := fmt.Fprintf(w, "%s\t", role.Namespace); err != nil {
@@ -792,7 +809,7 @@ func printRole(role *authorizationapi.Role, w io.Writer, opts kctl.PrintOptions)
 	return nil
 }
 
-func printRoleList(list *authorizationapi.RoleList, w io.Writer, opts kctl.PrintOptions) error {
+func printRoleList(list *authorizationapi.RoleList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, role := range list.Items {
 		if err := printRole(&role, w, opts); err != nil {
 			return err
@@ -802,7 +819,7 @@ func printRoleList(list *authorizationapi.RoleList, w io.Writer, opts kctl.Print
 	return nil
 }
 
-func printRoleBinding(roleBinding *authorizationapi.RoleBinding, w io.Writer, opts kctl.PrintOptions) error {
+func printRoleBinding(roleBinding *authorizationapi.RoleBinding, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, roleBinding.Name, opts.WithKind)
 	if opts.WithNamespace {
 		if _, err := fmt.Fprintf(w, "%s\t", roleBinding.Namespace); err != nil {
@@ -820,7 +837,7 @@ func printRoleBinding(roleBinding *authorizationapi.RoleBinding, w io.Writer, op
 	return nil
 }
 
-func printRoleBindingList(list *authorizationapi.RoleBindingList, w io.Writer, opts kctl.PrintOptions) error {
+func printRoleBindingList(list *authorizationapi.RoleBindingList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, roleBinding := range list.Items {
 		if err := printRoleBinding(&roleBinding, w, opts); err != nil {
 			return err
@@ -830,7 +847,7 @@ func printRoleBindingList(list *authorizationapi.RoleBindingList, w io.Writer, o
 	return nil
 }
 
-func printOAuthClient(client *oauthapi.OAuthClient, w io.Writer, opts kctl.PrintOptions) error {
+func printOAuthClient(client *oauthapi.OAuthClient, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, client.Name, opts.WithKind)
 	challenge := "FALSE"
 	if client.RespondWithChallenges {
@@ -845,7 +862,7 @@ func printOAuthClient(client *oauthapi.OAuthClient, w io.Writer, opts kctl.Print
 	return nil
 }
 
-func printOAuthClientList(list *oauthapi.OAuthClientList, w io.Writer, opts kctl.PrintOptions) error {
+func printOAuthClientList(list *oauthapi.OAuthClientList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printOAuthClient(&item, w, opts); err != nil {
 			return err
@@ -854,13 +871,13 @@ func printOAuthClientList(list *oauthapi.OAuthClientList, w io.Writer, opts kctl
 	return nil
 }
 
-func printOAuthClientAuthorization(auth *oauthapi.OAuthClientAuthorization, w io.Writer, opts kctl.PrintOptions) error {
+func printOAuthClientAuthorization(auth *oauthapi.OAuthClientAuthorization, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, auth.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%v\n", name, auth.UserName, auth.ClientName, strings.Join(auth.Scopes, ","))
 	return err
 }
 
-func printOAuthClientAuthorizationList(list *oauthapi.OAuthClientAuthorizationList, w io.Writer, opts kctl.PrintOptions) error {
+func printOAuthClientAuthorizationList(list *oauthapi.OAuthClientAuthorizationList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printOAuthClientAuthorization(&item, w, opts); err != nil {
 			return err
@@ -869,7 +886,7 @@ func printOAuthClientAuthorizationList(list *oauthapi.OAuthClientAuthorizationLi
 	return nil
 }
 
-func printOAuthAccessToken(token *oauthapi.OAuthAccessToken, w io.Writer, opts kctl.PrintOptions) error {
+func printOAuthAccessToken(token *oauthapi.OAuthAccessToken, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, token.Name, opts.WithKind)
 	created := token.CreationTimestamp
 	expires := created.Add(time.Duration(token.ExpiresIn) * time.Second)
@@ -877,7 +894,7 @@ func printOAuthAccessToken(token *oauthapi.OAuthAccessToken, w io.Writer, opts k
 	return err
 }
 
-func printOAuthAccessTokenList(list *oauthapi.OAuthAccessTokenList, w io.Writer, opts kctl.PrintOptions) error {
+func printOAuthAccessTokenList(list *oauthapi.OAuthAccessTokenList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printOAuthAccessToken(&item, w, opts); err != nil {
 			return err
@@ -886,7 +903,7 @@ func printOAuthAccessTokenList(list *oauthapi.OAuthAccessTokenList, w io.Writer,
 	return nil
 }
 
-func printOAuthAuthorizeToken(token *oauthapi.OAuthAuthorizeToken, w io.Writer, opts kctl.PrintOptions) error {
+func printOAuthAuthorizeToken(token *oauthapi.OAuthAuthorizeToken, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, token.Name, opts.WithKind)
 	created := token.CreationTimestamp
 	expires := created.Add(time.Duration(token.ExpiresIn) * time.Second)
@@ -894,7 +911,7 @@ func printOAuthAuthorizeToken(token *oauthapi.OAuthAuthorizeToken, w io.Writer, 
 	return err
 }
 
-func printOAuthAuthorizeTokenList(list *oauthapi.OAuthAuthorizeTokenList, w io.Writer, opts kctl.PrintOptions) error {
+func printOAuthAuthorizeTokenList(list *oauthapi.OAuthAuthorizeTokenList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printOAuthAuthorizeToken(&item, w, opts); err != nil {
 			return err
@@ -903,13 +920,13 @@ func printOAuthAuthorizeTokenList(list *oauthapi.OAuthAuthorizeTokenList, w io.W
 	return nil
 }
 
-func printUser(user *userapi.User, w io.Writer, opts kctl.PrintOptions) error {
+func printUser(user *userapi.User, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, user.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, user.UID, user.FullName, strings.Join(user.Identities, ", "))
 	return err
 }
 
-func printUserList(list *userapi.UserList, w io.Writer, opts kctl.PrintOptions) error {
+func printUserList(list *userapi.UserList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printUser(&item, w, opts); err != nil {
 			return err
@@ -918,13 +935,13 @@ func printUserList(list *userapi.UserList, w io.Writer, opts kctl.PrintOptions) 
 	return nil
 }
 
-func printIdentity(identity *userapi.Identity, w io.Writer, opts kctl.PrintOptions) error {
+func printIdentity(identity *userapi.Identity, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, identity.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, identity.ProviderName, identity.ProviderUserName, identity.User.Name, identity.User.UID)
 	return err
 }
 
-func printIdentityList(list *userapi.IdentityList, w io.Writer, opts kctl.PrintOptions) error {
+func printIdentityList(list *userapi.IdentityList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printIdentity(&item, w, opts); err != nil {
 			return err
@@ -933,19 +950,19 @@ func printIdentityList(list *userapi.IdentityList, w io.Writer, opts kctl.PrintO
 	return nil
 }
 
-func printUserIdentityMapping(mapping *userapi.UserIdentityMapping, w io.Writer, opts kctl.PrintOptions) error {
+func printUserIdentityMapping(mapping *userapi.UserIdentityMapping, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, mapping.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, mapping.Identity.Name, mapping.User.Name, mapping.User.UID)
 	return err
 }
 
-func printGroup(group *userapi.Group, w io.Writer, opts kctl.PrintOptions) error {
+func printGroup(group *userapi.Group, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, group.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\n", name, strings.Join(group.Users, ", "))
 	return err
 }
 
-func printGroupList(list *userapi.GroupList, w io.Writer, opts kctl.PrintOptions) error {
+func printGroupList(list *userapi.GroupList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printGroup(&item, w, opts); err != nil {
 			return err
@@ -954,13 +971,13 @@ func printGroupList(list *userapi.GroupList, w io.Writer, opts kctl.PrintOptions
 	return nil
 }
 
-func printHostSubnet(h *sdnapi.HostSubnet, w io.Writer, opts kctl.PrintOptions) error {
+func printHostSubnet(h *sdnapi.HostSubnet, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, h.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, h.Host, h.HostIP, h.Subnet)
 	return err
 }
 
-func printHostSubnetList(list *sdnapi.HostSubnetList, w io.Writer, opts kctl.PrintOptions) error {
+func printHostSubnetList(list *sdnapi.HostSubnetList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printHostSubnet(&item, w, opts); err != nil {
 			return err
@@ -969,13 +986,13 @@ func printHostSubnetList(list *sdnapi.HostSubnetList, w io.Writer, opts kctl.Pri
 	return nil
 }
 
-func printNetNamespace(h *sdnapi.NetNamespace, w io.Writer, opts kctl.PrintOptions) error {
+func printNetNamespace(h *sdnapi.NetNamespace, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, h.NetName, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%d\n", name, h.NetID)
 	return err
 }
 
-func printNetNamespaceList(list *sdnapi.NetNamespaceList, w io.Writer, opts kctl.PrintOptions) error {
+func printNetNamespaceList(list *sdnapi.NetNamespaceList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printNetNamespace(&item, w, opts); err != nil {
 			return err
@@ -984,13 +1001,13 @@ func printNetNamespaceList(list *sdnapi.NetNamespaceList, w io.Writer, opts kctl
 	return nil
 }
 
-func printClusterNetwork(n *sdnapi.ClusterNetwork, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterNetwork(n *sdnapi.ClusterNetwork, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, n.Name, opts.WithKind)
 	_, err := fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", name, n.Network, n.HostSubnetLength, n.ServiceNetwork, n.PluginName)
 	return err
 }
 
-func printClusterNetworkList(list *sdnapi.ClusterNetworkList, w io.Writer, opts kctl.PrintOptions) error {
+func printClusterNetworkList(list *sdnapi.ClusterNetworkList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printClusterNetwork(&item, w, opts); err != nil {
 			return err
@@ -999,7 +1016,7 @@ func printClusterNetworkList(list *sdnapi.ClusterNetworkList, w io.Writer, opts 
 	return nil
 }
 
-func printEgressNetworkPolicy(n *sdnapi.EgressNetworkPolicy, w io.Writer, opts kctl.PrintOptions) error {
+func printEgressNetworkPolicy(n *sdnapi.EgressNetworkPolicy, w io.Writer, opts kprinters.PrintOptions) error {
 	if opts.WithNamespace {
 		if _, err := fmt.Fprintf(w, "%s\t", n.Namespace); err != nil {
 			return err
@@ -1011,7 +1028,7 @@ func printEgressNetworkPolicy(n *sdnapi.EgressNetworkPolicy, w io.Writer, opts k
 	return nil
 }
 
-func printEgressNetworkPolicyList(list *sdnapi.EgressNetworkPolicyList, w io.Writer, opts kctl.PrintOptions) error {
+func printEgressNetworkPolicyList(list *sdnapi.EgressNetworkPolicyList, w io.Writer, opts kprinters.PrintOptions) error {
 	for _, item := range list.Items {
 		if err := printEgressNetworkPolicy(&item, w, opts); err != nil {
 			return err
@@ -1021,35 +1038,35 @@ func printEgressNetworkPolicyList(list *sdnapi.EgressNetworkPolicyList, w io.Wri
 }
 
 func appendItemLabels(itemLabels map[string]string, w io.Writer, columnLabels []string, showLabels bool) error {
-	if _, err := fmt.Fprint(w, kctl.AppendLabels(itemLabels, columnLabels)); err != nil {
+	if _, err := fmt.Fprint(w, kinternalprinters.AppendLabels(itemLabels, columnLabels)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprint(w, kctl.AppendAllLabels(showLabels, itemLabels)); err != nil {
+	if _, err := fmt.Fprint(w, kinternalprinters.AppendAllLabels(showLabels, itemLabels)); err != nil {
 		return err
 	}
 	return nil
 }
 
-func printClusterResourceQuota(resourceQuota *quotaapi.ClusterResourceQuota, w io.Writer, options kctl.PrintOptions) error {
+func printClusterResourceQuota(resourceQuota *quotaapi.ClusterResourceQuota, w io.Writer, options kprinters.PrintOptions) error {
 	name := formatResourceName(options.Kind, resourceQuota.Name, options.WithKind)
 
 	if _, err := fmt.Fprintf(w, "%s", name); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "\t%s", unversioned.FormatLabelSelector(resourceQuota.Spec.Selector.LabelSelector)); err != nil {
+	if _, err := fmt.Fprintf(w, "\t%s", metav1.FormatLabelSelector(resourceQuota.Spec.Selector.LabelSelector)); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "\t%s", resourceQuota.Spec.Selector.AnnotationSelector); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprint(w, kctl.AppendLabels(resourceQuota.Labels, options.ColumnLabels)); err != nil {
+	if _, err := fmt.Fprint(w, kinternalprinters.AppendLabels(resourceQuota.Labels, options.ColumnLabels)); err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(w, kctl.AppendAllLabels(options.ShowLabels, resourceQuota.Labels))
+	_, err := fmt.Fprint(w, kinternalprinters.AppendAllLabels(options.ShowLabels, resourceQuota.Labels))
 	return err
 }
 
-func printClusterResourceQuotaList(list *quotaapi.ClusterResourceQuotaList, w io.Writer, options kctl.PrintOptions) error {
+func printClusterResourceQuotaList(list *quotaapi.ClusterResourceQuotaList, w io.Writer, options kprinters.PrintOptions) error {
 	for i := range list.Items {
 		if err := printClusterResourceQuota(&list.Items[i], w, options); err != nil {
 			return err
@@ -1058,11 +1075,11 @@ func printClusterResourceQuotaList(list *quotaapi.ClusterResourceQuotaList, w io
 	return nil
 }
 
-func printAppliedClusterResourceQuota(resourceQuota *quotaapi.AppliedClusterResourceQuota, w io.Writer, options kctl.PrintOptions) error {
+func printAppliedClusterResourceQuota(resourceQuota *quotaapi.AppliedClusterResourceQuota, w io.Writer, options kprinters.PrintOptions) error {
 	return printClusterResourceQuota(quotaapi.ConvertAppliedClusterResourceQuotaToClusterResourceQuota(resourceQuota), w, options)
 }
 
-func printAppliedClusterResourceQuotaList(list *quotaapi.AppliedClusterResourceQuotaList, w io.Writer, options kctl.PrintOptions) error {
+func printAppliedClusterResourceQuotaList(list *quotaapi.AppliedClusterResourceQuotaList, w io.Writer, options kprinters.PrintOptions) error {
 	for i := range list.Items {
 		if err := printClusterResourceQuota(quotaapi.ConvertAppliedClusterResourceQuotaToClusterResourceQuota(&list.Items[i]), w, options); err != nil {
 			return err
@@ -1071,7 +1088,7 @@ func printAppliedClusterResourceQuotaList(list *quotaapi.AppliedClusterResourceQ
 	return nil
 }
 
-func printRoleBindingRestriction(rbr *authorizationapi.RoleBindingRestriction, w io.Writer, options kctl.PrintOptions) error {
+func printRoleBindingRestriction(rbr *authorizationapi.RoleBindingRestriction, w io.Writer, options kprinters.PrintOptions) error {
 	name := formatResourceName(options.Kind, rbr.Name, options.WithKind)
 	subjectType := roleBindingRestrictionType(rbr)
 	subjectList := []string{}
@@ -1086,7 +1103,7 @@ func printRoleBindingRestriction(rbr *authorizationapi.RoleBindingRestriction, w
 		}
 		for _, selector := range rbr.Spec.UserRestriction.Selectors {
 			subjectList = append(subjectList,
-				unversioned.FormatLabelSelector(&selector))
+				metav1.FormatLabelSelector(&selector))
 		}
 	case rbr.Spec.GroupRestriction != nil:
 		for _, group := range rbr.Spec.GroupRestriction.Groups {
@@ -1094,7 +1111,7 @@ func printRoleBindingRestriction(rbr *authorizationapi.RoleBindingRestriction, w
 		}
 		for _, selector := range rbr.Spec.GroupRestriction.Selectors {
 			subjectList = append(subjectList,
-				unversioned.FormatLabelSelector(&selector))
+				metav1.FormatLabelSelector(&selector))
 		}
 	case rbr.Spec.ServiceAccountRestriction != nil:
 		for _, sa := range rbr.Spec.ServiceAccountRestriction.ServiceAccounts {
@@ -1106,6 +1123,11 @@ func printRoleBindingRestriction(rbr *authorizationapi.RoleBindingRestriction, w
 		}
 	}
 
+	if options.WithNamespace {
+		if _, err := fmt.Fprintf(w, "%s\t", rbr.Namespace); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(w, "%s", name); err != nil {
 		return err
 	}
@@ -1124,11 +1146,80 @@ func printRoleBindingRestriction(rbr *authorizationapi.RoleBindingRestriction, w
 	return err
 }
 
-func printRoleBindingRestrictionList(list *authorizationapi.RoleBindingRestrictionList, w io.Writer, options kctl.PrintOptions) error {
+func printRoleBindingRestrictionList(list *authorizationapi.RoleBindingRestrictionList, w io.Writer, options kprinters.PrintOptions) error {
 	for i := range list.Items {
 		if err := printRoleBindingRestriction(&list.Items[i], w, options); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func printTemplateInstance(templateInstance *templateapi.TemplateInstance, w io.Writer, opts kprinters.PrintOptions) error {
+	name := formatResourceName(opts.Kind, templateInstance.Name, opts.WithKind)
+
+	if opts.WithNamespace {
+		if _, err := fmt.Fprintf(w, "%s\t", templateInstance.Namespace); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "%s\t%s", name, templateInstance.Spec.Template.Name); err != nil {
+		return err
+	}
+	if err := appendItemLabels(templateInstance.Labels, w, opts.ColumnLabels, opts.ShowLabels); err != nil {
+		return err
+	}
+	return nil
+}
+
+func printTemplateInstanceList(list *templateapi.TemplateInstanceList, w io.Writer, opts kprinters.PrintOptions) error {
+	for i := range list.Items {
+		if err := printTemplateInstance(&list.Items[i], w, opts); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printBrokerTemplateInstance(brokerTemplateInstance *templateapi.BrokerTemplateInstance, w io.Writer, opts kprinters.PrintOptions) error {
+	name := formatResourceName(opts.Kind, brokerTemplateInstance.Name, opts.WithKind)
+
+	if _, err := fmt.Fprintf(w, "%s\t%s/%s", name, brokerTemplateInstance.Spec.TemplateInstance.Namespace, brokerTemplateInstance.Spec.TemplateInstance.Name); err != nil {
+		return err
+	}
+	if err := appendItemLabels(brokerTemplateInstance.Labels, w, opts.ColumnLabels, opts.ShowLabels); err != nil {
+		return err
+	}
+	return nil
+}
+
+func printBrokerTemplateInstanceList(list *templateapi.BrokerTemplateInstanceList, w io.Writer, opts kprinters.PrintOptions) error {
+	for i := range list.Items {
+		if err := printBrokerTemplateInstance(&list.Items[i], w, opts); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printSecurityContextConstraints(item *securityapi.SecurityContextConstraints, w io.Writer, options kprinters.PrintOptions) error {
+	priority := "<none>"
+	if item.Priority != nil {
+		priority = fmt.Sprintf("%d", *item.Priority)
+	}
+
+	_, err := fmt.Fprintf(w, "%s\t%t\t%v\t%s\t%s\t%s\t%s\t%s\t%t\t%v\n", item.Name, item.AllowPrivilegedContainer,
+		item.AllowedCapabilities, item.SELinuxContext.Type,
+		item.RunAsUser.Type, item.FSGroup.Type, item.SupplementalGroups.Type, priority, item.ReadOnlyRootFilesystem, item.Volumes)
+	return err
+}
+
+func printSecurityContextConstraintsList(list *securityapi.SecurityContextConstraintsList, w io.Writer, options kprinters.PrintOptions) error {
+	for _, item := range list.Items {
+		if err := printSecurityContextConstraints(&item, w, options); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
