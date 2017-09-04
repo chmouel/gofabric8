@@ -275,6 +275,7 @@ func GetDefaultFabric8Deployment() DefaultFabric8Deployment {
 	d.openConsole = false
 	d.packageName = systemPackage
 	d.storageclassWait = true
+	d.legacyFlag = true
 	return d
 }
 
